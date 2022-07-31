@@ -74,6 +74,9 @@ int main_real(int argc, const char *argv[])
 		case COMMAND_BENCH:
 			compile_file_list(&build_options);
 			break;
+		case COMMAND_EXEC:
+			compiler_exec(&build_options);
+			break;
 		case COMMAND_MISSING:
 			UNREACHABLE
 	}

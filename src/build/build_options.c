@@ -255,6 +255,11 @@ static void parse_command(BuildOptions *options)
 		options->command = COMMAND_COMPILE_RUN;
 		return;
 	}
+	if (arg_match("exec"))
+	{
+		options->command = COMMAND_EXEC;
+		return;
+	}
 	if (arg_match("clean-run"))
 	{
 		options->command = COMMAND_CLEAN_RUN;

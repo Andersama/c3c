@@ -81,6 +81,7 @@ static bool command_is_compile(CompilerCommand command)
 		case COMMAND_BENCH:
 		case COMMAND_UNIT_TEST:
 		case COMMAND_PRINT_SYNTAX:
+		case COMMAND_EXEC:
 			return false;
 	}
 	UNREACHABLE
@@ -274,4 +275,16 @@ void init_build_target(BuildTarget *target, BuildOptions *options)
 		if (!file_is_dir(target->build_dir)) error_exit("Expected '%s' to be a directory.", target->build_dir);
 	}
 	load_library_files();
+}
+
+void init_build_from_project(BuildTarget* target, BuildOptions* options)
+{
+	*target = (BuildTarget){ 0 };
+	// Locate the project.c3p
+	file_find_top_dir();
+	// Parse it
+	Project* project = project_load();
+	*target = *project_select_target(project, options->target_select);
+
+	//update_build_target_from_options(target, options);
 }

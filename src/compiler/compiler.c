@@ -3,6 +3,7 @@
 // a copy of which can be found in the LICENSE file.
 
 #include "compiler_internal.h"
+#include "subprocess.h"
 #include <compiler_tests/benchmark.h>
 #ifndef _MSC_VER
 #include <unistd.h>
@@ -359,6 +360,51 @@ void compiler_compile(void)
 	}
 
 	free(obj_files);
+}
+
+void compiler_exec(BuildOptions* options) {
+	//init_build_target(&active_target, options);
+	init_build_from_project(&active_target, options);
+	//should double check the program is built for the default target
+	active_target.arch_os_target = default_target;
+
+	const char* output_name = active_target_name();
+	DEBUG_LOG("Will run");
+	printf("Launching %s...\n", output_name);
+
+	int ret;
+	switch (active_target.arch_os_target) {
+	case WINDOWS_X86:
+	case WINDOWS_X64:
+	case MINGW_X64: {
+		platform_target.os = OS_TYPE_WIN32;
+		
+		struct subprocess_s subprocess;
+		const char* command_line[] = {output_name, NULL};
+
+		if (subprocess_create(command_line,0,&subprocess) != 0) {
+			printf("Could not start a windows process\n");
+		} else {
+			subprocess_join(&subprocess, &ret);
+
+			FILE* p_stdout = subprocess_stdout(&subprocess);
+			char buff[1025] = {0};
+			for (;fgets(buff, 1024, p_stdout);) {
+				fputs(buff, stdout);
+			}
+
+		}
+		//ret = system(output_name);
+		break;
+	}
+	default:
+		platform_target.os = OS_TYPE_UNKNOWN;
+		ret = system(str_printf("./%s", output_name));
+		break;
+	}
+
+	//ret = system(platform_target.os == OS_TYPE_WIN32 ? output_name : str_printf("./%s", output_name));
+	printf("Program finished with exit code %d.", ret);
 }
 
 static const char **target_expand_source_names(const char** dirs, const char **suffix_list, int suffix_count, bool error_on_mismatch)
