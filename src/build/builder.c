@@ -116,6 +116,8 @@ static void update_build_target_from_options(BuildTarget *target, BuildOptions *
 			break;
 	}
 
+	target->output_headers = options->emit_c_headers ? true : target->output_headers;
+
 	target->backend = options->backend;
 
 	// Copy optimization levels.

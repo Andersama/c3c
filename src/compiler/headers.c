@@ -28,6 +28,12 @@ static void header_gen_function(FILE *file, SemaContext *c, Decl *decl)
 
 static void header_print_type(FILE *file, Type *type)
 {
+	RETRY:
+	if (type == NULL) {
+		printf("Printing null type?\n");
+		return;
+	}
+	printf("header_print_type handling: %i\n", type->type_kind);
 	switch (type->type_kind)
 	{
 		case CT_TYPES:
@@ -108,12 +114,13 @@ static void header_print_type(FILE *file, Type *type)
 			OUTPUT("union %s__", type->decl->extname);
 			return;
 		case TYPE_DISTINCT:
-			header_print_type(file, type->decl->distinct_decl.base_type);
-			return;
+			type = type->decl->distinct_decl.base_type;
+			goto RETRY;
 		case TYPE_ANYERR:
 			break;
 		case TYPE_TYPEDEF:
-			break;
+			type = type->canonical;
+			goto RETRY;
 		case TYPE_ARRAY:
 			break;
 		case TYPE_ANY:
@@ -122,7 +129,16 @@ static void header_print_type(FILE *file, Type *type)
 			break;
 		case TYPE_VECTOR:
 			break;
+		/*
+		case TYPE_TYPEDEF:
+			type = type->canonical;
+			goto RETRY;
+		case TYPE_DISTINCT:
+			type = type->decl->distinct_decl.base_type;
+			goto RETRY;
+		*/
 	}
+	printf("header_print_type: %i\n", (int)type->type_kind);
 	TODO
 }
 
@@ -133,14 +149,12 @@ static void header_gen_members(FILE *file, int indent, Decl **members)
 		Decl *member = members[i];
 		if (member->decl_kind == DECL_VAR)
 		{
+			printf("adding member: %s\n", member->name);
 			INDENT();
 			header_print_type(file, member->type);
 			OUTPUT(" %s;\n", member->name);
 		}
-		else
-		{
-			TODO
-		}
+		//TODO
 	}
 }
 static void header_gen_struct(FILE *file, int indent, Decl *decl)
@@ -149,6 +163,7 @@ static void header_gen_struct(FILE *file, int indent, Decl *decl)
 	{
 		OUTPUT("typedef struct %s__ %s;\n", decl->extname, decl->extname);
 	}
+	printf("generating: %s\n", decl->name);
 	INDENT();
 	if (decl->name)
 	{
@@ -173,7 +188,11 @@ static void header_gen_union(FILE *file, int indent, Decl *decl)
 
 static void header_gen_enum(FILE *file, int indent, Decl *decl)
 {
-	TODO
+	//TODO
+	OUTPUT("typedef enum %s__ %s;\n", decl->extname, decl->extname);
+	OUTPUT("enum %s__\n{\n", decl->extname);
+	header_gen_members(file, indent, decl->strukt.members);
+	OUTPUT("};\n");
 }
 
 static void header_gen_err(FILE *file, int indent, Decl *decl)
@@ -184,9 +203,23 @@ static void header_gen_err(FILE *file, int indent, Decl *decl)
 	OUTPUT("};\n");
 }
 
+static void header_gen_typedef(FILE* file, int indent, Decl* decl)
+{
+	if (decl->name)
+		OUTPUT("typedef %__ %s;\n", decl->name, decl->name);
+}
+
+static void header_gen_distinct(FILE* file, int indent, Decl* decl)
+{
+	if (decl->name)
+		OUTPUT("typedef %__ %s;\n", decl->name, decl->name);
+	
+}
+
 
 static void header_gen_decl(FILE *file, int indent, Decl *decl)
 {
+	printf("header_gen_decl handling: %i\n", (int)decl->decl_kind);
 	switch (decl->decl_kind)
 	{
 		case NON_TYPE_DECLS:
@@ -200,8 +233,11 @@ static void header_gen_decl(FILE *file, int indent, Decl *decl)
 		case DECL_BITSTRUCT:
 			TODO
 		case DECL_TYPEDEF:
+			header_gen_typedef(file, indent, decl);
+			return;
 		case DECL_DISTINCT:
-			TODO
+			header_gen_distinct(file, indent, decl);
+			return;
 		case DECL_STRUCT:
 			header_gen_struct(file, indent, decl);
 			return;
@@ -225,9 +261,12 @@ static void header_gen_var(FILE *file, SemaContext *c, Decl *decl)
 
 void header_gen(Module *module)
 {
-	TODO
+	//TODO
 	CompilationUnit *unit = module->units[0];
 	const char *filename = str_cat(unit->file->name, ".h");
+
+	printf("writing header: %s\n", filename);
+
 	FILE *file = fopen(filename, "w");
 	OUTPUT("#include <stdint.h>\n");
 	OUTPUT("#ifndef __c3__\n");
@@ -236,12 +275,13 @@ void header_gen(Module *module)
 	header_print_type(file, type_flatten(type_typeid));
 	OUTPUT(" c3typeid_t;\n");
 	OUTPUT("#endif\n");
+
 	VECEACH(unit->types, i)
 	{
 		header_gen_decl(file, 0, unit->types[i]);
 	}
-
-	TODO
+	
+	//TODO
 	/*
 	VECEACH(context->vars, i)
 	{

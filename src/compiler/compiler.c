@@ -206,10 +206,13 @@ void compiler_compile(void)
 
 	if (active_target.output_headers)
 	{
+		dir_make("c_headers");
+		dir_change("c_headers");
 		for (unsigned i = 0; i < module_count; i++)
 		{
 			header_gen(modules[i]);
 		}
+		dir_change("..");
 		return;
 	}
 

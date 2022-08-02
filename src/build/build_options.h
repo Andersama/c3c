@@ -251,6 +251,7 @@ typedef struct BuildOptions_
 	int safe_mode;
 	bool emit_llvm;
 	bool emit_bitcode;
+	bool emit_c_headers;
 	bool test_mode;
 	bool no_stdlib;
 	bool force_linker;

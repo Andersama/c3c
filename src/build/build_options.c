@@ -575,6 +575,11 @@ static void parse_option(BuildOptions *options)
 				options->emit_llvm = true;
 				return;
 			}
+			if (match_longopt("emit-c-headers"))
+			{
+				options->emit_c_headers = true;
+				return;
+			}
 			if (match_longopt("cc"))
 			{
 				if (at_end() || next_is_opt()) error_exit("error: --cc needs a compiler name.");
