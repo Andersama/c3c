@@ -25,7 +25,7 @@ static void header_gen_function(FILE *file, SemaContext *c, Decl *decl)
 {
 	fprintf(file, "/* function */\n");
 }
-
+#if 0
 static void header_print_type(FILE *file, Type *type)
 {
 	RETRY:
@@ -104,9 +104,33 @@ static void header_print_type(FILE *file, Type *type)
 			OUTPUT("enum %s__", type->decl->extname);
 			return;
 		case TYPE_FLEXIBLE_ARRAY:
-			TODO
+			header_print_type(file, type->array.base);
+			// we need to print []'s in later functions?
+			return;
 		case TYPE_FUNC:
-			TODO
+			/*
+			// cross fingers?
+			// OUTPUT("%s", type->decl->name);
+			// void(type1, type2, type3...etc);
+			header_print_type(file, type->func.prototype->rtype);
+
+			OUTPUT("(*)(");
+			unsigned vecsize = vec_size(type->func.prototype->params);
+			Type** params = type->func.prototype->params;
+			if (vecsize > 0) {
+				Type* param = params[0];
+				header_print_type(file, param);
+			}
+			for (unsigned i = 1; i < vecsize; i++)
+			{
+				OUTPUT(", ");
+				Type* param = params[i];
+				header_print_type(file, param);
+			}
+			OUTPUT(")");
+			*/
+			return;
+			//TODO
 		case TYPE_STRUCT:
 			OUTPUT("struct %s__", type->decl->extname);
 			return;
@@ -119,14 +143,30 @@ static void header_print_type(FILE *file, Type *type)
 		case TYPE_ANYERR:
 			break;
 		case TYPE_TYPEDEF:
-			type = type->canonical;
-			goto RETRY;
+			/*
+			if (type == type_usize) {
+				OUTPUT("size_t");
+				return;
+			}
+			if (type == type_iptrdiff)
+			{
+				OUTPUT("ptrdiff_t");
+				return;
+			}
+			*/
+			OUTPUT("%s__", type->decl->extname);
+			return;
+			//type = type->canonical;
+			//goto RETRY;
 		case TYPE_ARRAY:
 			break;
 		case TYPE_ANY:
 			TODO
 		case TYPE_SUBARRAY:
-			break;
+			header_print_type(file, type->array.base);
+			// we need to print []'s in later functions?
+			return;
+			//break;
 		case TYPE_VECTOR:
 			break;
 		/*
@@ -142,6 +182,413 @@ static void header_print_type(FILE *file, Type *type)
 	TODO
 }
 
+static void header_print_named_type(FILE* file, Type* type, const char *name) {
+RETRY:
+	if (type == NULL) {
+		printf("Printing null type?\n");
+		return;
+	}
+	printf("header_print_type handling: %i\n", type->type_kind);
+	switch (type->type_kind)
+	{
+	case CT_TYPES:
+		UNREACHABLE
+	case TYPE_BITSTRUCT:
+		TODO
+	case TYPE_FAILABLE:
+	case TYPE_FAILABLE_ANY:
+		// If this is reachable then we are not doing the proper lowering.
+		UNREACHABLE
+	case TYPE_VOID:
+		OUTPUT("void");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_BOOL:
+		OUTPUT("bool");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_I8:
+		OUTPUT("int8_t");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_I16:
+		OUTPUT("int16_t");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_I32:
+		OUTPUT("int32_t");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_I64:
+		OUTPUT("int64_t");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_I128:
+		OUTPUT("__int128");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_U8:
+		OUTPUT("uint8_t");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_U16:
+		OUTPUT("uint16_t");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_U32:
+		OUTPUT("uint32_t");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_U64:
+		OUTPUT("uint64_t");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_U128:
+		OUTPUT("unsigned __int128");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_F16:
+		OUTPUT("__fp16");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_F32:
+		OUTPUT("float");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_F64:
+		OUTPUT("double");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_F128:
+		OUTPUT("__float128");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_TYPEID:
+		OUTPUT("c3typeid_t");
+		OUTPUT(" %s", name);
+		return;
+	case TYPE_POINTER:
+		header_print_named_type(file, type->pointer, "");
+		OUTPUT("* %s", name);
+		return;
+	case TYPE_ENUM:
+	case TYPE_FAULTTYPE:
+		OUTPUT("enum %s__", type->decl->extname);
+		return;
+	case TYPE_FLEXIBLE_ARRAY:
+		header_print_named_type(file, type->array.base, name);
+		// we need to print []'s in later functions?
+		return;
+	case TYPE_FUNC:
+		// cross fingers?
+		// OUTPUT("%s", type->decl->name);
+		// void(type1, type2, type3...etc);
+		header_print_named_type(file, type->func.prototype->rtype, "");
+
+		OUTPUT("(*%s)(", name);
+		unsigned vecsize = vec_size(type->func.prototype->params);
+		Type** params = type->func.prototype->params;
+		if (vecsize > 0) {
+			Type* param = params[0];
+			header_print_named_type(file, param, "");
+		}
+		for (unsigned i = 1; i < vecsize; i++)
+		{
+			OUTPUT(", ");
+			Type* param = params[i];
+			header_print_named_type(file, param, "");
+		}
+		OUTPUT(")");
+		return;
+		//TODO
+	case TYPE_STRUCT:
+		OUTPUT("struct %s__", type->decl->extname);
+		return;
+	case TYPE_UNION:
+		OUTPUT("union %s__", type->decl->extname);
+		return;
+	case TYPE_DISTINCT:
+		type = type->decl->distinct_decl.base_type;
+		goto RETRY;
+	case TYPE_ANYERR:
+		break;
+	case TYPE_TYPEDEF:
+		/*
+		if (type == type_usize) {
+			OUTPUT("size_t");
+			return;
+		}
+		if (type == type_iptrdiff)
+		{
+			OUTPUT("ptrdiff_t");
+			return;
+		}
+		if (type == type_uptrdiff) {
+			OUTPUT("unsigned ptrdiff_t");
+			return;
+		}
+		*/
+		type = type->canonical;
+		goto RETRY;
+		
+		//OUTPUT("%s__", type->decl->extname);
+		return;
+	case TYPE_ARRAY:
+		header_print_type(file, type->array.base);
+		// we need to print []'s in later functions?
+		return;
+		break;
+	case TYPE_ANY:
+		TODO
+	case TYPE_SUBARRAY:
+		header_print_type(file, type->array.base);
+		// we need to print []'s in later functions?
+		return;
+		//break;
+	case TYPE_VECTOR:
+		break;
+		/*
+		case TYPE_TYPEDEF:
+			type = type->canonical;
+			goto RETRY;
+		case TYPE_DISTINCT:
+			type = type->decl->distinct_decl.base_type;
+			goto RETRY;
+		*/
+	}
+	printf("header_print_named_type: %i\n", (int)type->type_kind);
+	TODO
+}
+#endif
+
+static void c_type_append_func_to_scratch(FunctionPrototype* prototype, const char* name);
+static void c_type_append_name_to_scratch(Type* type, const char* name);
+
+static void c_type_append_func_to_scratch(FunctionPrototype* prototype, const char* name)
+{
+	c_type_append_name_to_scratch(prototype->rtype, "");
+	scratch_buffer_append("(*");
+	scratch_buffer_append(name);
+	scratch_buffer_append_char(')');
+	scratch_buffer_append_char('(');
+	unsigned elements = vec_size(prototype->params);
+	if (elements > 0) {
+		c_type_append_name_to_scratch(prototype->params[0], "");
+	}
+	for (unsigned i = 0; i < elements; i++)
+	{
+		//scratch_buffer_append_char(',');
+		scratch_buffer_append(", ");
+		//type_append_name_to_scratch(prototype->params[i]);
+		c_type_append_name_to_scratch(prototype->params[i], "");
+	}
+	if (prototype->variadic == VARIADIC_RAW && elements > 0)
+	{
+		scratch_buffer_append_char(',');
+	}
+	if (prototype->variadic != VARIADIC_NONE)
+	{
+		scratch_buffer_append("...");
+	}
+	scratch_buffer_append_char(')');
+}
+
+static void c_type_append_name_to_scratch(Type* type, const char *name)
+{
+	printf("c_type_append_name_to_scratch: %s\n", name);
+	type = type->canonical;
+	RETRY:
+	switch (type->type_kind)
+	{
+	case CT_TYPES:
+		UNREACHABLE
+	case TYPE_BITSTRUCT:
+		TODO
+	//case TYPE_FAILABLE:
+	//case TYPE_FAILABLE_ANY:
+		// If this is reachable then we are not doing the proper lowering.
+	//	UNREACHABLE
+	case TYPE_TYPEDEF:
+		type = type->canonical;
+		goto RETRY;
+		//break;
+	case TYPE_FAULTTYPE:
+		TODO;
+		break;
+	case TYPE_STRUCT:
+		scratch_buffer_append("struct ");
+		scratch_buffer_append(type->decl->extname);
+		scratch_buffer_append("__ ");
+		scratch_buffer_append(name);
+		//OUTPUT("struct %s__", type->decl->extname);
+		return;
+	case TYPE_UNION:
+		scratch_buffer_append("union ");
+		scratch_buffer_append(type->decl->extname);
+		scratch_buffer_append("__ ");
+		scratch_buffer_append(name);
+		//OUTPUT("union %s__", type->decl->extname);
+		return;
+	case TYPE_ENUM:
+		scratch_buffer_append("enum ");
+		scratch_buffer_append(type->decl->extname);
+		scratch_buffer_append("__ ");
+		scratch_buffer_append(name);
+		return;
+	case TYPE_DISTINCT:
+		//scratch_buffer_append(type->decl->name);
+		type = type->decl->distinct_decl.base_type;
+		goto RETRY;
+		//break;
+	/*
+	case TYPE_BITSTRUCT:
+		scratch_buffer_append(type->decl->name);
+		break;
+		*/
+	case TYPE_POINTER:
+		// looking at a func pointer
+		if (type->pointer->type_kind == TYPE_FUNC) {
+			type = type->pointer;
+			goto RETRY;
+		}
+		c_type_append_name_to_scratch(type->pointer, "");
+		scratch_buffer_append("* ");
+		scratch_buffer_append(name);
+		return;
+	case TYPE_FAILABLE_ANY:
+		scratch_buffer_append("void!");
+		return;
+	case TYPE_FAILABLE:
+		//TODO: I've no clue how this is supposed to work (presumably this is impossible to reach)
+		if (type->failable)
+		{
+			c_type_append_name_to_scratch(type->failable, "");
+		}
+		else
+		{
+			scratch_buffer_append("void");
+		}
+		scratch_buffer_append_char('!');
+		return;
+	case TYPE_SUBARRAY:
+		c_type_append_name_to_scratch(type->array.base, name);
+		scratch_buffer_append("[]");
+		return;
+	case TYPE_FLEXIBLE_ARRAY:
+		c_type_append_name_to_scratch(type->array.base, name);
+		scratch_buffer_append("[*]");
+		return;
+	case TYPE_VOID:
+		scratch_buffer_append("void");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_BOOL:
+		scratch_buffer_append("bool");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_I8:
+		scratch_buffer_append("int8_t");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_I16:
+		scratch_buffer_append("int16_t");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_I32:
+		scratch_buffer_append("int32_t");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_I64:
+		scratch_buffer_append("int64_t");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_I128:
+		scratch_buffer_append("__int128");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_U8:
+		scratch_buffer_append("uint8_t");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_U16:
+		scratch_buffer_append("uint16_t");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_U32:
+		scratch_buffer_append("uint32_t");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_U64:
+		scratch_buffer_append("uint64_t");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_U128:
+		scratch_buffer_append("unsigned __int128");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_F16:
+		scratch_buffer_append("__fp16");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_F32:
+		scratch_buffer_append("float");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_F64:
+		scratch_buffer_append("double");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_F128:
+		scratch_buffer_append("__float128");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_TYPEID:
+		scratch_buffer_append("c3typeid_t");
+		scratch_buffer_append_char(' ');
+		scratch_buffer_append(name);
+		return;
+	case TYPE_ANYERR:
+	case TYPE_ANY:
+	case TYPE_VECTOR:
+		scratch_buffer_append(type->name);
+		return;
+	/*
+	case TYPE_UNTYPED_LIST:
+	case TYPE_INFERRED_ARRAY:
+	case TYPE_TYPEINFO:
+		UNREACHABLE
+			break;
+			*/
+	case TYPE_FUNC:
+		c_type_append_func_to_scratch(type->func.prototype, name);
+		return;
+	case TYPE_ARRAY:
+		c_type_append_name_to_scratch(type->array.base, name);
+		scratch_buffer_append_char('[');
+		scratch_buffer_append_signed_int(type->array.len);
+		scratch_buffer_append_char(']');
+		return;
+	}
+
+	UNREACHABLE
+}
+
 static void header_gen_members(FILE *file, int indent, Decl **members)
 {
 	VECEACH(members, i)
@@ -151,8 +598,25 @@ static void header_gen_members(FILE *file, int indent, Decl **members)
 		{
 			printf("adding member: %s\n", member->name);
 			INDENT();
-			header_print_type(file, member->type);
-			OUTPUT(" %s;\n", member->name);
+			//header_print_named_type(file, member->type, member->name);
+			scratch_buffer_clear();
+			c_type_append_name_to_scratch(member->type, member->name);
+
+			scratch_buffer.str[scratch_buffer.len] = '\0';
+			printf("%.*s\n", scratch_buffer.len, &scratch_buffer.str[0]);
+			OUTPUT("%.*s", scratch_buffer.len, &scratch_buffer.str[0]); //scratch_buffer.len,
+			OUTPUT(";\n");
+			/*
+			if (is_obvious_type(member->type)) {
+				header_print_obvious_type(file, member->type);
+				OUTPUT(" %s;\n", member->name);
+			} else {
+				//didn't know what to do?
+				OUTPUT("//%s %s\n", member->type->name, member->name);
+			}
+			*/
+			//header_print_type(file, member->type);
+			//OUTPUT(" %s;\n", member->name);
 		}
 		//TODO
 	}
@@ -205,20 +669,78 @@ static void header_gen_err(FILE *file, int indent, Decl *decl)
 
 static void header_gen_typedef(FILE* file, int indent, Decl* decl)
 {
+	/*
 	if (decl->name)
-		OUTPUT("typedef %__ %s;\n", decl->name, decl->name);
+		OUTPUT("typedef %s__ %s;\n", decl->name, decl->name);
+	if (decl->extname)
+		OUTPUT("typedef %s__ %s;\n", decl->extname, decl->name);
+		*/
+	/*
+	if (decl->type->type_kind == TYPE_POINTER) {
+		printf("%s","typedef pointer type\n");
+		if (decl->type->pointer->type_kind == TYPE_FUNC) {
+			OUTPUT("typedef ");
+			Type* type = decl->type->pointer;
+			// print whole types
+			header_print_type(file, type->func.prototype->rtype);
+			OUTPUT("typedef (*%s__)(", decl->extname);
+			unsigned vecsize = vec_size(type->func.prototype->params);
+			Type** params = type->func.prototype->params;
+			if (vecsize > 0) {
+				Type* param = params[0];
+				header_print_type(file, param);
+			}
+			for (unsigned i = 1; i < vecsize; i++)
+			{
+				OUTPUT(", ");
+				Type* param = params[i];
+				header_print_type(file, param);
+			}
+			OUTPUT(")");
+
+			OUTPUT("typedef b%s__ %s;\n", decl->extname, decl->extname);
+			return;
+		}
+	}*/
+	if (decl->extname && decl->type) {
+		OUTPUT("typedef ");
+		//header_print_type(file, decl->type);
+		//header_print_type(file, decl->typedef_decl.type_info->type);
+		//OUTPUT(" %s__;\n", decl->extname);
+		scratch_buffer_clear();
+
+		//the typedef name
+		scratch_buffer_append(decl->extname);
+		scratch_buffer_append("__");
+		scratch_buffer.str[scratch_buffer.len] = '\0';
+		scratch_buffer.len += 1;
+		uint32_t typedef_len = scratch_buffer.len;
+
+		c_type_append_name_to_scratch(decl->type, &scratch_buffer.str[0]);
+		//printf("str len: %i\n", scratch_buffer.len);
+		scratch_buffer.str[scratch_buffer.len] = '\0';
+		printf("%.*s\n", scratch_buffer.len, &scratch_buffer.str[typedef_len]);
+		OUTPUT("%.*s", scratch_buffer.len, &scratch_buffer.str[typedef_len]); //scratch_buffer.len,
+		OUTPUT(";\n");
+
+
+		OUTPUT("typedef %s__ %s;\n", decl->extname, decl->extname);
+	}
 }
 
 static void header_gen_distinct(FILE* file, int indent, Decl* decl)
 {
+	//type = type->decl->distinct_decl.base_type;
+	//goto RETRY;
 	if (decl->name)
-		OUTPUT("typedef %__ %s;\n", decl->name, decl->name);
+		OUTPUT("typedef %s__ %s;\n", decl->name, decl->name);
 	
 }
 
 
 static void header_gen_decl(FILE *file, int indent, Decl *decl)
 {
+	RETRY:
 	printf("header_gen_decl handling: %i\n", (int)decl->decl_kind);
 	switch (decl->decl_kind)
 	{
@@ -271,9 +793,9 @@ void header_gen(Module *module)
 	OUTPUT("#include <stdint.h>\n");
 	OUTPUT("#ifndef __c3__\n");
 	OUTPUT("#define __c3__\n");
-	OUTPUT("typedef ");
-	header_print_type(file, type_flatten(type_typeid));
-	OUTPUT(" c3typeid_t;\n");
+	//OUTPUT("typedef ");
+	//header_print_type(file, type_flatten(type_typeid));
+	//OUTPUT(" c3typeid_t;\n");
 	OUTPUT("#endif\n");
 
 	VECEACH(unit->types, i)
