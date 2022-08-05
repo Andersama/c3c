@@ -8,6 +8,9 @@
 #define OUTPUT(x, ...) fprintf(file, x, ## __VA_ARGS__)
 #define INDENT() indent_line(file, indent)
 
+static void c_type_append_func_to_scratch(FunctionPrototype* prototype, const char* name);
+static void c_type_append_name_to_scratch(Type* type, const char* name);
+
 static void indent_line(FILE *file, int indent)
 {
 	for (int i = 0; i < indent * 3; i++)
@@ -22,9 +25,142 @@ static void header_gen_method(FILE *file, SemaContext *c, Decl *decl)
 	fprintf(file, "/* method */\n");
 }
 
-static void header_gen_function(FILE *file, SemaContext *c, Decl *decl)
+static void header_gen_function_decl(FILE *file, SemaContext *c, Decl *decl)
 {
+	assert(decl->decl_kind == DECL_FUNC);
 	fprintf(file, "/* function */\n");
+
+	FunctionPrototype* prototype = decl->type->func.prototype;
+
+	unsigned params = vec_size(prototype->params);
+
+	if (prototype->ret_by_ref) {
+	
+	}
+
+	if (decl->func_decl.attr_noinline)
+	{
+		OUTPUT("%s", "__declspec(noinline) ");
+		//llvm_attribute_add(c, function, attribute_id.noinline, -1);
+	}
+	if (decl->func_decl.attr_noreturn)
+	{
+		OUTPUT("%s", "__declspec(noreturn) ");
+		//llvm_attribute_add(c, function, attribute_id.noreturn, -1);
+	}
+
+	AlignSize type_alignment = type_abi_alignment(decl->type);
+	if (decl->alignment != type_alignment)
+	{
+		//llvm_set_alignment(function, decl->alignment);
+		OUTPUT("%s", "alignas(");
+		OUTPUT("%i", type_alignment);
+		OUTPUT("%s", ") ");
+	}
+
+	if (decl->section)
+	{
+
+	}
+
+	switch (prototype->call_abi) {
+	case CALL_C:
+		//return LLVMCCallConv;
+	case CALL_X86_STD:
+		//return LLVMX86StdcallCallConv;
+	case CALL_X86_FAST:
+		//return LLVMX86FastcallCallConv;
+	case CALL_X86_REG:
+		//return LLVMX86RegCallCallConv;
+	case CALL_X86_THIS:
+		//return LLVMX86ThisCallCallConv;
+	case CALL_X86_VECTOR:
+		//return LLVMX86VectorCallCallConv;
+	case CALL_AAPCS:
+		//return LLVMARMAAPCSCallConv;
+	case CALL_AAPCS_VFP:
+		//return LLVMARMAAPCSVFPCallConv;
+	default:
+		//return LLVMCCallConv;
+		break;
+	}
+	//__declspec(noinline)
+
+	Visibility visibility = decl->visibility;
+	if (decl->is_external_visible)
+		visibility = VISIBLE_PUBLIC;
+
+	switch (visibility) {
+	case VISIBLE_EXTERN:
+		if (decl->is_weak)
+		{
+			//LLVMSetLinkage(function, LLVMExternalWeakLinkage);
+			//llvm_set_comdat(c, function);
+		}
+		else
+		{
+			//LLVMSetLinkage(function, LLVMExternalLinkage);
+		}
+		//LLVMSetVisibility(function, LLVMDefaultVisibility);
+		if (prototype->call_abi == CALL_X86_STD && platform_target.os == OS_TYPE_WIN32)
+		{
+			//LLVMSetDLLStorageClass(function, LLVMDLLImportStorageClass);
+		}
+		break;
+	case VISIBLE_PUBLIC:
+	case VISIBLE_MODULE:
+		//if (decl->is_weak) llvm_set_weak(c, function);
+		if (decl->is_weak) {
+		
+		}
+		break;
+	case VISIBLE_LOCAL:
+		/*
+		LLVMSetLinkage(function, decl->is_weak ? LLVMLinkerPrivateWeakLinkage : LLVMInternalLinkage);
+		LLVMSetVisibility(function, LLVMDefaultVisibility);
+		*/
+		break;;
+	}
+	uint32_t return_type_start = scratch_buffer.len;
+	c_type_append_name_to_scratch(prototype->rtype, "");
+	uint32_t return_type_end = scratch_buffer.len;
+	OUTPUT("%.*s", (return_type_end - return_type_start), &scratch_buffer.str[return_type_start]);
+	scratch_buffer.len = return_type_start;
+
+	if (decl->extname && *decl->extname) {
+		OUTPUT("%s", decl->name);
+	} else if (decl->name && *decl->name) {
+		OUTPUT("%s", decl->name);
+	} else {
+		OUTPUT("%s", "_no_function_name_given_");
+		//OUTPUT("%s", "/* unknown function name */ ");
+	}
+
+	uint32_t params_start = scratch_buffer.len;
+	scratch_buffer_append_char('(');
+	if (params > 0) {
+		c_type_append_name_to_scratch(prototype->params[0], "");
+	}
+	for (unsigned i = 1; i < params; i++)
+	{
+		//scratch_buffer_append_char(',');
+		scratch_buffer_append(", ");
+		//type_append_name_to_scratch(prototype->params[i]);
+		c_type_append_name_to_scratch(prototype->params[i], "");
+	}
+	if (prototype->variadic == VARIADIC_RAW && params > 0)
+	{
+		scratch_buffer_append_char(',');
+	}
+	if (prototype->variadic != VARIADIC_NONE)
+	{
+		scratch_buffer_append("...");
+	}
+	scratch_buffer_append_len(");\n", 3);
+	uint32_t params_end = scratch_buffer.len;
+	OUTPUT("%.*s", params_end - params_start, &scratch_buffer.str[params_start]);
+	scratch_buffer.len = params_start;
+
 }
 #if 0
 static void header_print_type(FILE *file, Type *type)
@@ -362,9 +498,6 @@ RETRY:
 }
 #endif
 
-static void c_type_append_func_to_scratch(FunctionPrototype* prototype, const char* name);
-static void c_type_append_name_to_scratch(Type* type, const char* name);
-
 static void c_type_append_func_to_scratch(FunctionPrototype* prototype, const char* name)
 {
 	c_type_append_name_to_scratch(prototype->rtype, "");
@@ -378,7 +511,7 @@ static void c_type_append_func_to_scratch(FunctionPrototype* prototype, const ch
 	if (elements > 0) {
 		c_type_append_name_to_scratch(prototype->params[0], "");
 	}
-	for (unsigned i = 0; i < elements; i++)
+	for (unsigned i = 1; i < elements; i++)
 	{
 		//scratch_buffer_append_char(',');
 		scratch_buffer_append(", ");
@@ -466,7 +599,7 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 			goto RETRY;
 		}
 		c_type_append_name_to_scratch(type->pointer, "");
-		scratch_buffer_char('*');
+		scratch_buffer_append_char('*');
 
 		if (name && *name) {
 			scratch_buffer_append_char(' ');
@@ -861,6 +994,8 @@ static void header_gen_decl(FILE *file, int indent, Decl *decl)
 		case DECL_BODYPARAM:
 			UNREACHABLE
 		case DECL_FUNC:
+			//header_gen_function(file, indent, decl);
+			return;
 		case DECL_BITSTRUCT:
 			TODO
 		case DECL_TYPEDEF:
@@ -892,9 +1027,14 @@ static void header_gen_var(FILE *file, SemaContext *c, Decl *decl)
 
 void header_gen(Module *module)
 {
+	if (!vec_size(module->units))
+		return;
 	//TODO
 	CompilationUnit *unit = module->units[0];
 	const char *filename = str_cat(unit->file->name, ".h");
+
+	SemaContext ctx;
+	sema_context_init(&ctx, unit);
 
 	printf("writing header: %s\n", filename);
 
@@ -907,11 +1047,44 @@ void header_gen(Module *module)
 	//OUTPUT(" c3typeid_t;\n");
 	OUTPUT("#endif\n");
 
+	//prototype each before they're defined
 	VECEACH(unit->types, i)
 	{
 		header_gen_decl(file, 0, unit->types[i]);
 	}
+
+	VECEACH(unit->enums, i)
+	{
+		//llvm_emit_type_decls(gen_context, unit->enums[i]);
+	}
+
+	VECEACH(unit->functions, i)
+	{
+		header_gen_function_decl(file, &ctx, unit->functions[i]);
+		//llvm_emit_function_decl(gen_context, unit->functions[i]);
+	}
 	
+	//write the actual function bodies
+	VECEACH(unit->functions, i)
+	{
+		Decl* decl = unit->functions[i];
+		if (decl->func_decl.body) {
+		
+		}
+			//llvm_emit_function_body(gen_context, decl);
+	}
+	if (unit->main_function)
+		//llvm_emit_function_body(gen_context, unit->main_function);
+
+	VECEACH(unit->methods, i)
+	{
+		Decl* decl = unit->methods[i];
+		if (decl->func_decl.body) {
+		
+		}
+			//llvm_emit_function_body(gen_context, decl);
+	}
+
 	//TODO
 	/*
 	VECEACH(context->vars, i)
@@ -928,3 +1101,84 @@ void header_gen(Module *module)
 	}*/
 	fclose(file);
 }
+/*
+void *llvm_gen(Module *module)
+{
+	if (!vec_size(module->units)) return NULL;
+	assert(intrinsics_setup);
+	GenContext *gen_context = cmalloc(sizeof(GenContext));
+	gencontext_init(gen_context, module);
+	gencontext_begin_module(gen_context);
+
+	VECEACH(module->units, j)
+	{
+		CompilationUnit *unit = module->units[j];
+		gencontext_init_file_emit(gen_context, unit);
+		gen_context->debug.compile_unit = unit->llvm.debug_compile_unit;
+		gen_context->debug.file = unit->llvm.debug_file;
+
+		VECEACH(unit->methods, i)
+		{
+			llvm_emit_function_decl(gen_context, unit->methods[i]);
+		}
+		VECEACH(unit->types, i)
+		{
+			llvm_emit_type_decls(gen_context, unit->types[i]);
+		}
+		VECEACH(unit->enums, i)
+		{
+			llvm_emit_type_decls(gen_context, unit->enums[i]);
+		}
+		VECEACH(unit->functions, i)
+		{
+			llvm_emit_function_decl(gen_context, unit->functions[i]);
+		}
+		if (unit->main_function) llvm_emit_function_decl(gen_context, unit->main_function);
+	}
+
+	VECEACH(module->units, j)
+	{
+		CompilationUnit *unit = module->units[j];
+		gen_context->debug.compile_unit = unit->llvm.debug_compile_unit;
+		gen_context->debug.file = unit->llvm.debug_file;
+
+		VECEACH(unit->vars, i)
+		{
+			llvm_get_ref(gen_context, unit->vars[i]);
+		}
+		VECEACH(unit->vars, i)
+		{
+			llvm_emit_global_variable_init(gen_context, unit->vars[i]);
+		}
+		VECEACH(unit->functions, i)
+		{
+			Decl *decl = unit->functions[i];
+			if (decl->func_decl.body) llvm_emit_function_body(gen_context, decl);
+		}
+		if (unit->main_function) llvm_emit_function_body(gen_context, unit->main_function);
+
+		VECEACH(unit->methods, i)
+		{
+			Decl *decl = unit->methods[i];
+			if (decl->func_decl.body) llvm_emit_function_body(gen_context, decl);
+		}
+
+		gencontext_end_file_emit(gen_context, unit);
+	}
+	// EmitDeferred()
+
+	if (llvm_use_debug(gen_context))
+	{
+		LLVMDIBuilderFinalize(gen_context->debug.builder);
+		LLVMDisposeDIBuilder(gen_context->debug.builder);
+	}
+
+	// If it's in test, then we want to serialize the IR before it is optimized.
+	if (active_target.test_output)
+	{
+		gencontext_print_llvm_ir(gen_context);
+		gencontext_verify_ir(gen_context);
+	}
+	return gen_context;
+}
+*/
