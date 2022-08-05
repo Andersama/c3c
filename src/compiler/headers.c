@@ -3,6 +3,7 @@
 // a copy of which can be found in the LICENSE file.
 
 #include "compiler_internal.h"
+#include "base_n.h"
 
 #define OUTPUT(x, ...) fprintf(file, x, ## __VA_ARGS__)
 #define INDENT() indent_line(file, indent)
@@ -368,7 +369,9 @@ static void c_type_append_func_to_scratch(FunctionPrototype* prototype, const ch
 {
 	c_type_append_name_to_scratch(prototype->rtype, "");
 	scratch_buffer_append("(*");
-	scratch_buffer_append(name);
+	if (name && *name) {
+		scratch_buffer_append(name);
+	}
 	scratch_buffer_append_char(')');
 	scratch_buffer_append_char('(');
 	unsigned elements = vec_size(prototype->params);
@@ -392,6 +395,8 @@ static void c_type_append_func_to_scratch(FunctionPrototype* prototype, const ch
 	}
 	scratch_buffer_append_char(')');
 }
+
+static const char base62_alphabet_extended[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_[]*&:";
 
 static void c_type_append_name_to_scratch(Type* type, const char *name)
 {
@@ -418,22 +423,31 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 	case TYPE_STRUCT:
 		scratch_buffer_append("struct ");
 		scratch_buffer_append(type->decl->extname);
-		scratch_buffer_append("__ ");
-		scratch_buffer_append(name);
+		scratch_buffer_append("__");
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		//OUTPUT("struct %s__", type->decl->extname);
 		return;
 	case TYPE_UNION:
 		scratch_buffer_append("union ");
 		scratch_buffer_append(type->decl->extname);
-		scratch_buffer_append("__ ");
-		scratch_buffer_append(name);
+		scratch_buffer_append("__");
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		//OUTPUT("union %s__", type->decl->extname);
 		return;
 	case TYPE_ENUM:
 		scratch_buffer_append("enum ");
 		scratch_buffer_append(type->decl->extname);
-		scratch_buffer_append("__ ");
-		scratch_buffer_append(name);
+		scratch_buffer_append("__");
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_DISTINCT:
 		//scratch_buffer_append(type->decl->name);
@@ -446,14 +460,18 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 		break;
 		*/
 	case TYPE_POINTER:
-		// looking at a func pointer
+		// looking at a func pointer (should probably dig through until we hit this)
 		if (type->pointer->type_kind == TYPE_FUNC) {
 			type = type->pointer;
 			goto RETRY;
 		}
 		c_type_append_name_to_scratch(type->pointer, "");
-		scratch_buffer_append("* ");
-		scratch_buffer_append(name);
+		scratch_buffer_char('*');
+
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_FAILABLE_ANY:
 		scratch_buffer_append("void!");
@@ -470,13 +488,96 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 		}
 		scratch_buffer_append_char('!');
 		return;
-	case TYPE_SUBARRAY:
-		c_type_append_name_to_scratch(type->array.base, name);
-		scratch_buffer_append("[]");
+	case TYPE_SUBARRAY: {
+		//char_is_base64()
+		//type->array.base->name;
+		//c_type_append_name_to_scratch(type->array.base, name);
+		//scratch_buffer_append("[]");
+		scratch_buffer_append("struct __subarray_");
+
+		//write out the base type (w/o a name)
+		uint32_t c3name_start = scratch_buffer.len;
+		c_type_append_name_to_scratch(type->array.base, "");
+		uint32_t c3name_end = scratch_buffer.len;
+		scratch_buffer_append_char('\0');
+		uint32_t base62_start = scratch_buffer.len;
+		struct encode_result r = base62_5_encode(&scratch_buffer.str[scratch_buffer.len], (0xffff - (c3name_end)), &scratch_buffer.str[c3name_start], c3name_end - c3name_start, base62_alphabet_extended);
+
+		//move the __subarray_base64 portion to where c3name starts
+		memcpy(&scratch_buffer.str[c3name_start], &scratch_buffer.str[base62_start], r.written_chars); //(array_name_end - array_name_start)
+		scratch_buffer.len = c3name_start + r.written_chars;
+
+		//write the name
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
+
+	}
+		/*
+		scratch_buffer_append_char('[');
+		scratch_buffer_append_signed_int(type->array.len);
+		scratch_buffer_append_char(']');
+		*/
+		/*
+		uint32_t c3name_end = scratch_buffer.len;
+		scratch_buffer_append_char('\0');
+
+		int count = base64_encode(&scratch_buffer.str[c3name_start], c3name_end - c3name_end, &scratch_buffer.str[scratch_buffer.len]);
+		scratch_buffer.len += count;
+		*/
+
+
 		return;
-	case TYPE_FLEXIBLE_ARRAY:
-		c_type_append_name_to_scratch(type->array.base, name);
-		scratch_buffer_append("[*]");
+	case TYPE_FLEXIBLE_ARRAY: {
+		//c_type_append_name_to_scratch(type->array.base, name);
+		//scratch_buffer_append("[*]");
+		
+		//prepare "struct "
+		/*
+		scratch_buffer_append("struct ");
+		//write out the type
+		uint32_t c3name_start = scratch_buffer.len;
+		c_type_append_name_to_scratch(type->array.base, "");
+		uint32_t c3name_end = scratch_buffer.len;
+		scratch_buffer_append_char('\0');
+
+		//convert the type to it's struct's name
+		uint32_t array_name_start = scratch_buffer.len;
+		scratch_buffer_append("__flexarray_");
+		struct encode_result r = base62_5_encode(&scratch_buffer.str[scratch_buffer.len], (0xffff - (c3name_end)), &scratch_buffer.str[c3name_start], c3name_end - c3name_start, base62_alphabet_extended);
+		//int count = base64_encode(&scratch_buffer.str[c3name_start], c3name_end - c3name_start, &scratch_buffer.str[scratch_buffer.len]);
+		scratch_buffer.len += r.written_chars;
+		uint32_t array_name_end = scratch_buffer.len;
+		
+		//move the __subarray_base64 portion to where c3name starts
+		memcpy(&scratch_buffer.str[c3name_start], &scratch_buffer.str[array_name_start], (array_name_end - array_name_start));
+		//scratch buffer "back" to normal
+		scratch_buffer.len = c3name_start + (array_name_end - array_name_start);
+
+		scratch_buffer_append_char(' ');
+		*/
+		scratch_buffer_append("struct __flexarray_");
+		
+		//write out the base type (w/o a name)
+		uint32_t c3name_start = scratch_buffer.len;
+		c_type_append_name_to_scratch(type->array.base, "");
+		uint32_t c3name_end = scratch_buffer.len;
+		scratch_buffer_append_char('\0');
+		uint32_t base62_start = scratch_buffer.len;
+		struct encode_result r = base62_5_encode(&scratch_buffer.str[scratch_buffer.len], (0xffff - (c3name_end)), &scratch_buffer.str[c3name_start], c3name_end - c3name_start, base62_alphabet_extended);
+
+		//move the __subarray_base64 portion to where c3name starts
+		memcpy(&scratch_buffer.str[c3name_start], &scratch_buffer.str[base62_start], r.written_chars); //(array_name_end - array_name_start)
+		scratch_buffer.len = c3name_start + r.written_chars;
+
+		//write the name
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
+
+	}
 		return;
 	case TYPE_VOID:
 		scratch_buffer_append("void");
@@ -579,10 +680,18 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 		c_type_append_func_to_scratch(type->func.prototype, name);
 		return;
 	case TYPE_ARRAY:
+		//uint32_t c3name_start = scratch_buffer.len;
 		c_type_append_name_to_scratch(type->array.base, name);
 		scratch_buffer_append_char('[');
 		scratch_buffer_append_signed_int(type->array.len);
 		scratch_buffer_append_char(']');
+		/*
+		uint32_t c3name_end = scratch_buffer.len;
+		scratch_buffer_append_char('\0');
+
+		int count = base64_encode(&scratch_buffer.str[c3name_start], c3name_end - c3name_end, &scratch_buffer.str[scratch_buffer.len]);
+		scratch_buffer.len += count;
+		*/
 		return;
 	}
 
