@@ -28,6 +28,7 @@ static void header_gen_method(FILE *file, SemaContext *c, Decl *decl)
 static void header_gen_function_decl(FILE *file, SemaContext *c, Decl *decl)
 {
 	assert(decl->decl_kind == DECL_FUNC);
+	//if we want print documentation and comments
 	fprintf(file, "/* function */\n");
 
 	FunctionPrototype* prototype = decl->type->func.prototype;
@@ -35,7 +36,7 @@ static void header_gen_function_decl(FILE *file, SemaContext *c, Decl *decl)
 	unsigned params = vec_size(prototype->params);
 
 	if (prototype->ret_by_ref) {
-	
+		
 	}
 
 	if (decl->func_decl.attr_noinline)
@@ -62,7 +63,7 @@ static void header_gen_function_decl(FILE *file, SemaContext *c, Decl *decl)
 	{
 
 	}
-
+	
 	switch (prototype->call_abi) {
 	case CALL_C:
 		//return LLVMCCallConv;
@@ -79,6 +80,7 @@ static void header_gen_function_decl(FILE *file, SemaContext *c, Decl *decl)
 	case CALL_AAPCS:
 		//return LLVMARMAAPCSCallConv;
 	case CALL_AAPCS_VFP:
+		break;
 		//return LLVMARMAAPCSVFPCallConv;
 	default:
 		//return LLVMCCallConv;
@@ -124,7 +126,7 @@ static void header_gen_function_decl(FILE *file, SemaContext *c, Decl *decl)
 	uint32_t return_type_start = scratch_buffer.len;
 	c_type_append_name_to_scratch(prototype->rtype, "");
 	uint32_t return_type_end = scratch_buffer.len;
-	OUTPUT("%.*s", (return_type_end - return_type_start), &scratch_buffer.str[return_type_start]);
+	OUTPUT("%.*s ", (return_type_end - return_type_start), &scratch_buffer.str[return_type_start]);
 	scratch_buffer.len = return_type_start;
 
 	if (decl->extname && *decl->extname) {
@@ -554,9 +556,12 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 		TODO;
 		break;
 	case TYPE_STRUCT:
-		scratch_buffer_append("struct ");
-		scratch_buffer_append(type->decl->extname);
-		scratch_buffer_append("__");
+		scratch_buffer_append_len("struct ", 7);
+		if (type->decl->extname && *type->decl->extname)
+			scratch_buffer_append(type->decl->extname);
+		else
+			scratch_buffer_append(type->decl->name);
+		scratch_buffer_append_len("__", 2);
 		if (name && *name) {
 			scratch_buffer_append_char(' ');
 			scratch_buffer_append(name);
@@ -564,9 +569,12 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 		//OUTPUT("struct %s__", type->decl->extname);
 		return;
 	case TYPE_UNION:
-		scratch_buffer_append("union ");
-		scratch_buffer_append(type->decl->extname);
-		scratch_buffer_append("__");
+		scratch_buffer_append_len("union ", 6);
+		if (type->decl->extname && *type->decl->extname)
+			scratch_buffer_append(type->decl->extname);
+		else
+			scratch_buffer_append(type->decl->name);
+		scratch_buffer_append_len("__", 2);
 		if (name && *name) {
 			scratch_buffer_append_char(' ');
 			scratch_buffer_append(name);
@@ -574,9 +582,12 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 		//OUTPUT("union %s__", type->decl->extname);
 		return;
 	case TYPE_ENUM:
-		scratch_buffer_append("enum ");
-		scratch_buffer_append(type->decl->extname);
-		scratch_buffer_append("__");
+		scratch_buffer_append_len("enum ", 5);
+		if (type->decl->extname && *type->decl->extname)
+			scratch_buffer_append(type->decl->extname);
+		else
+			scratch_buffer_append(type->decl->name);
+		scratch_buffer_append_len("__", 2);
 		if (name && *name) {
 			scratch_buffer_append_char(' ');
 			scratch_buffer_append(name);
@@ -607,10 +618,16 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 		}
 		return;
 	case TYPE_FAILABLE_ANY:
-		scratch_buffer_append("void!");
+		scratch_buffer_append_len("struct __any_failable", 21);
+		//OUTPUT("%s", "struct __faultany");
+		//scratch_buffer_append("void!");
 		return;
 	case TYPE_FAILABLE:
 		//TODO: I've no clue how this is supposed to work (presumably this is impossible to reach)
+
+		scratch_buffer_append("struct __failable_");
+
+		uint32_t c3name_start = scratch_buffer.len;
 		if (type->failable)
 		{
 			c_type_append_name_to_scratch(type->failable, "");
@@ -619,7 +636,26 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 		{
 			scratch_buffer_append("void");
 		}
-		scratch_buffer_append_char('!');
+		uint32_t c3name_end = scratch_buffer.len;
+		//scratch_buffer_append_char('!');
+		//write out the base type (w/o a name)
+		
+		//c_type_append_name_to_scratch(type->array.base, "");
+		scratch_buffer_append_char('\0');
+
+		uint32_t base62_start = scratch_buffer.len;
+		struct encode_result r = base62_5_encode(&scratch_buffer.str[scratch_buffer.len], (0xffff - (c3name_end)), &scratch_buffer.str[c3name_start], c3name_end - c3name_start, base62_alphabet_extended);
+
+		//move the __subarray_base64 portion to where c3name starts
+		memcpy(&scratch_buffer.str[c3name_start], &scratch_buffer.str[base62_start], r.written_chars); //(array_name_end - array_name_start)
+		scratch_buffer.len = c3name_start + r.written_chars;
+
+		//write the name
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
+
 		return;
 	case TYPE_SUBARRAY: {
 		//char_is_base64()
@@ -713,89 +749,123 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 	}
 		return;
 	case TYPE_VOID:
-		scratch_buffer_append("void");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("void", 4);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_BOOL:
-		scratch_buffer_append("bool");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("bool", 4);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_I8:
-		scratch_buffer_append("int8_t");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("int8_t", 6);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_I16:
-		scratch_buffer_append("int16_t");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("int16_t", 7);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_I32:
-		scratch_buffer_append("int32_t");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("int32_t", 7);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_I64:
-		scratch_buffer_append("int64_t");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("int64_t", 7);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_I128:
-		scratch_buffer_append("__int128");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("__int128", 8);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_U8:
-		scratch_buffer_append("uint8_t");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("uint8_t", 7);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_U16:
-		scratch_buffer_append("uint16_t");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("uint16_t", 8);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_U32:
-		scratch_buffer_append("uint32_t");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("uint32_t", 8);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_U64:
-		scratch_buffer_append("uint64_t");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("uint64_t", 8);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_U128:
-		scratch_buffer_append("unsigned __int128");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("unsigned __int128", 17);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_F16:
-		scratch_buffer_append("__fp16");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("__fp16", 6);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_F32:
-		scratch_buffer_append("float");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("float", 5);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_F64:
-		scratch_buffer_append("double");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("double", 6);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_F128:
-		scratch_buffer_append("__float128");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("__float128", 10);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_TYPEID:
-		scratch_buffer_append("c3typeid_t");
-		scratch_buffer_append_char(' ');
-		scratch_buffer_append(name);
+		scratch_buffer_append_len("c3typeid_t", 10);
+		if (name && *name) {
+			scratch_buffer_append_char(' ');
+			scratch_buffer_append(name);
+		}
 		return;
 	case TYPE_ANYERR:
 	case TYPE_ANY:
@@ -859,10 +929,55 @@ static void header_gen_members(FILE *file, int indent, Decl **members)
 			*/
 			//header_print_type(file, member->type);
 			//OUTPUT(" %s;\n", member->name);
+		} else {
+			INDENT();
+			OUTPUT("/* a member named [%s] : type[%i] */\n", member->name, member->decl_kind);
+			//TODO;
 		}
 		//TODO
 	}
 }
+
+static void header_gen_enum_members(FILE* file, int indent, Decl** members) {
+	VECEACH(members, i)
+	{
+		Decl* member = members[i];
+		if (member->decl_kind == DECL_VAR)
+		{
+			printf("adding member: %s\n", member->name);
+			INDENT();
+			//header_print_named_type(file, member->type, member->name);
+			scratch_buffer_clear();
+			c_type_append_name_to_scratch(member->type, member->name);
+
+			scratch_buffer.str[scratch_buffer.len] = '\0';
+			printf("%.*s\n", scratch_buffer.len, &scratch_buffer.str[0]);
+			OUTPUT("%.*s", scratch_buffer.len, &scratch_buffer.str[0]); //scratch_buffer.len,
+			OUTPUT(";\n");
+			/*
+			if (is_obvious_type(member->type)) {
+				header_print_obvious_type(file, member->type);
+				OUTPUT(" %s;\n", member->name);
+			} else {
+				//didn't know what to do?
+				OUTPUT("//%s %s\n", member->type->name, member->name);
+			}
+			*/
+			//header_print_type(file, member->type);
+			//OUTPUT(" %s;\n", member->name);
+		}
+		if (member->decl_kind == DECL_ENUM_CONSTANT) {
+			INDENT();
+			OUTPUT("%s, //%i\n", member->name, i);
+		} else {
+			INDENT();
+			OUTPUT("/* a member named [%s] : type[%i] */\n", member->name, member->decl_kind);
+			//TODO;
+		}
+		//TODO
+	}
+}
+
 static void header_gen_struct(FILE *file, int indent, Decl *decl)
 {
 	if (!indent)
@@ -897,7 +1012,9 @@ static void header_gen_enum(FILE *file, int indent, Decl *decl)
 	//TODO
 	OUTPUT("typedef enum %s__ %s;\n", decl->extname, decl->extname);
 	OUTPUT("enum %s__\n{\n", decl->extname);
-	header_gen_members(file, indent, decl->strukt.members);
+	//decl->enums
+	//decl->strukt
+	header_gen_enum_members(file, indent, decl->enums.values);
 	OUTPUT("};\n");
 }
 
@@ -1048,6 +1165,7 @@ void header_gen(Module *module)
 	OUTPUT("#endif\n");
 
 	//prototype each before they're defined
+	// structs?
 	VECEACH(unit->types, i)
 	{
 		header_gen_decl(file, 0, unit->types[i]);
@@ -1055,6 +1173,7 @@ void header_gen(Module *module)
 
 	VECEACH(unit->enums, i)
 	{
+		header_gen_decl(file, 0, unit->enums[i]);
 		//llvm_emit_type_decls(gen_context, unit->enums[i]);
 	}
 
@@ -1062,6 +1181,12 @@ void header_gen(Module *module)
 	{
 		header_gen_function_decl(file, &ctx, unit->functions[i]);
 		//llvm_emit_function_decl(gen_context, unit->functions[i]);
+	}
+
+	VECEACH(unit->methods, i)
+	{
+		header_gen_function_decl(file, &ctx, unit->methods[i]);
+		//llvm_emit_function_decl(gen_context, unit->methods[i]);
 	}
 	
 	//write the actual function bodies
