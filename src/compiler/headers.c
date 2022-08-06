@@ -11,6 +11,9 @@
 static void c_type_append_func_to_scratch(FunctionPrototype* prototype, const char* name);
 static void c_type_append_name_to_scratch(Type* type, const char* name);
 
+void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr);
+void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast);
+
 static void indent_line(FILE *file, int indent)
 {
 	for (int i = 0; i < indent * 3; i++)
@@ -561,6 +564,7 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 			scratch_buffer_append(type->decl->extname);
 		else
 			scratch_buffer_append(type->decl->name);
+
 		scratch_buffer_append_len("__", 2);
 		if (name && *name) {
 			scratch_buffer_append_char(' ');
@@ -681,51 +685,12 @@ static void c_type_append_name_to_scratch(Type* type, const char *name)
 			scratch_buffer_append_char(' ');
 			scratch_buffer_append(name);
 		}
-
 	}
-		/*
-		scratch_buffer_append_char('[');
-		scratch_buffer_append_signed_int(type->array.len);
-		scratch_buffer_append_char(']');
-		*/
-		/*
-		uint32_t c3name_end = scratch_buffer.len;
-		scratch_buffer_append_char('\0');
-
-		int count = base64_encode(&scratch_buffer.str[c3name_start], c3name_end - c3name_end, &scratch_buffer.str[scratch_buffer.len]);
-		scratch_buffer.len += count;
-		*/
-
-
 		return;
 	case TYPE_FLEXIBLE_ARRAY: {
 		//c_type_append_name_to_scratch(type->array.base, name);
 		//scratch_buffer_append("[*]");
 		
-		//prepare "struct "
-		/*
-		scratch_buffer_append("struct ");
-		//write out the type
-		uint32_t c3name_start = scratch_buffer.len;
-		c_type_append_name_to_scratch(type->array.base, "");
-		uint32_t c3name_end = scratch_buffer.len;
-		scratch_buffer_append_char('\0');
-
-		//convert the type to it's struct's name
-		uint32_t array_name_start = scratch_buffer.len;
-		scratch_buffer_append("__flexarray_");
-		struct encode_result r = base62_5_encode(&scratch_buffer.str[scratch_buffer.len], (0xffff - (c3name_end)), &scratch_buffer.str[c3name_start], c3name_end - c3name_start, base62_alphabet_extended);
-		//int count = base64_encode(&scratch_buffer.str[c3name_start], c3name_end - c3name_start, &scratch_buffer.str[scratch_buffer.len]);
-		scratch_buffer.len += r.written_chars;
-		uint32_t array_name_end = scratch_buffer.len;
-		
-		//move the __subarray_base64 portion to where c3name starts
-		memcpy(&scratch_buffer.str[c3name_start], &scratch_buffer.str[array_name_start], (array_name_end - array_name_start));
-		//scratch buffer "back" to normal
-		scratch_buffer.len = c3name_start + (array_name_end - array_name_start);
-
-		scratch_buffer_append_char(' ');
-		*/
 		scratch_buffer_append("struct __flexarray_");
 		
 		//write out the base type (w/o a name)
@@ -1305,5 +1270,451 @@ void *llvm_gen(Module *module)
 		gencontext_verify_ir(gen_context);
 	}
 	return gen_context;
+}
+*/
+
+void c_emit_break(FILE* file, void* context, int indent, Ast* ast) {
+	//ast->contbreak_stmt.defers
+	//label: defered_block:
+	Ast* jump_target = astptr(ast->contbreak_stmt.ast);
+
+	switch (jump_target->ast_kind)
+	{
+	case AST_IF_STMT:
+		//jump = jump_target->if_stmt.codegen.break_block;
+		INDENT();
+		OUTPUT("%s", "break;\n");
+		break;
+	case AST_FOR_STMT:
+		//jump = jump_target->for_stmt.codegen.exit_block;
+		INDENT();
+		OUTPUT("%s", "break;\n");
+		break;
+	case AST_IF_CATCH_SWITCH_STMT:
+	case AST_SWITCH_STMT:
+		//jump = jump_target->switch_stmt.codegen.exit_block;
+		INDENT();
+		OUTPUT("%s", "break;\n");
+		break;
+	case AST_FOREACH_STMT:
+	default:
+		UNREACHABLE
+	}
+	//c_emit_jmp(file, context, indent, jump);
+}
+
+void c_emit_continue(FILE* file, void* context, int indent, Ast* ast) {
+	//ast->contbreak_stmt.defers
+	//label: defered_block:
+	Ast* jump_target = astptr(ast->contbreak_stmt.ast);
+
+	switch (jump_target->ast_kind)
+	{
+	case AST_IF_STMT:
+	case AST_SWITCH_STMT:
+	case AST_FOREACH_STMT:
+		UNREACHABLE
+			break;
+	case AST_FOR_STMT:
+		INDENT();
+		OUTPUT("%s", "continue;\n");
+		break;
+	default:
+		UNREACHABLE
+	}
+	//c_emit_jmp(file, context, indent, jump);
+}
+
+void c_emit_local_decl(FILE* file, void* context, int indent, Decl* decl) {
+	if (decl->var.is_static)
+	{
+		INDENT();
+		OUTPUT("%s", "static ");
+		if (decl->backend_ref) {
+			return;
+		}
+
+		if (IS_FAILABLE(decl))
+		{
+
+		}
+	}
+	TODO;
+}
+
+void c_emit_if(FILE* file, void* context, int indent, Ast* ast) {
+	
+	INDENT();
+
+	Expr* cond = exprptr(ast->if_stmt.cond);
+	OUTPUT("%s", "if (");
+	//emit the condition
+	OUTPUT("%s", ")");
+
+	Ast* then_body = astptr(ast->if_stmt.then_body);
+	if (ast_is_not_empty(then_body))
+	{
+		INDENT();
+		OUTPUT("%s", "else {");
+		OUTPUT("%s", "}");
+	}
+
+	AstId else_id = ast->if_stmt.else_body;
+	Ast* else_body = else_id ? astptr(else_id) : NULL;
+	if (ast_is_not_empty(else_body))
+	{
+		INDENT();
+		OUTPUT("%s", "{");
+		OUTPUT("%s", "}");
+	}
+}
+
+void c_emit_expr_stmt(FILE* file, void* context, int indent, Ast* ast) {
+	TODO;
+}
+
+void c_emit_statement_chain(FILE* file, void* context, int indent, AstId current) {
+
+	while (current)
+	{
+		c_emit_stmt(file, context, indent, ast_next(&current));
+		//llvm_emit_stmt(c, ast_next(&current));
+	}
+	//TODO;
+}
+
+//GenContext *context
+void c_emit_return(FILE* file, struct GenContext* context, int indent, Ast* ast) {
+	INDENT();
+
+	Expr* expr = ast->return_stmt.expr;
+	//expr->type
+	Type* return_ty = expr->type; //? the return type?
+
+	if (type_is_failable(return_ty)) //context->cur_func_decl->type->func.prototype->rtype
+	{
+		//struct BEValue be_value = { 0 };
+		c_emit_expr(file, context, indent, NULL, expr->inner_expr);
+		c_emit_statement_chain(file, context, indent, ast->return_stmt.cleanup);
+		//c_emit_statement_chain(file, context, indent, ast->return_stmt.cleanup);
+		//c_emit_return_abi(file, context, indent, , );
+	}
+
+	OUTPUT("%s", "return");
+
+	bool has_return_value = ast->return_stmt.expr != NULL;
+	if (has_return_value) {
+		OUTPUT("%s", " ");
+		c_emit_expr(file, context, indent, NULL, ast->return_stmt.expr);
+	}
+	OUTPUT("%s", ";\n");
+	TODO;
+}
+
+void c_emit_compound_stmt(FILE* file, void* context, int indent, Ast* ast)
+{	
+	/*
+	if (llvm_use_debug(c))
+	{
+		llvm_debug_push_lexical_scope(c, ast->span);
+	}
+	*/
+	assert(ast->ast_kind == AST_COMPOUND_STMT);
+	c_emit_statement_chain(file, context, indent, ast->compound_stmt.first_stmt);
+	//llvm_emit_statement_chain(c, ast->compound_stmt.first_stmt);
+	/*
+	if (llvm_use_debug(c))
+	{
+		llvm_debug_scope_pop(c);
+	}
+	*/
+}
+void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
+	TODO;
+}
+
+//void llvm_emit_for_stmt(GenContext *c, Ast *ast)
+void c_emit_for(FILE* file, void* context, int indent, Ast* ast) {
+	INDENT();
+
+	ExprId init = ast->for_stmt.init;
+	ExprId incr = ast->for_stmt.incr;
+	ExprId cond = ast->for_stmt.cond;
+
+	//Expr* cond = cond_id ? exprptr(cond_id) : NULL;
+
+	Ast* body = astptr(ast->for_stmt.body);
+
+	// Skipping first cond? This is do-while semantics
+	bool skip_first = ast->for_stmt.flow.skip_first;
+	//LoopType loop = loop_type_for_cond(cond, skip_first);
+
+	/*
+	TODO; // gaurd against infinite loops?
+	if (!inc_block && !body_block && !cond_block)
+	{
+		if (loop == LOOP_INFINITE)
+		{
+		OUTPUT("%s", "//warning: infinite loop!");
+		return;
+		}
+	}
+	*/
+
+	if (skip_first) {
+		//struct BEValue dummy = { 0 };
+
+		OUTPUT("%s", "do {");
+		if (body)
+			c_emit_stmt(file, context, indent, body);
+		INDENT();
+		OUTPUT("%s", "} while (");
+		c_emit_expr(file, context, indent, NULL, cond ? exprptr(cond) : NULL);
+		OUTPUT(");\n");
+	} else {
+		//struct BEValue dummy = { 0 };
+
+		OUTPUT("%s" "for (");
+		if (init)
+			c_emit_expr(file, context, indent, NULL, init ? exprptr(init) : NULL);
+		OUTPUT("%s", ";");
+		if (cond)
+			c_emit_expr(file, context, indent, NULL, cond ? exprptr(cond) : NULL);
+		OUTPUT("%s", ";");
+		if (incr)
+			c_emit_expr(file, context, indent, NULL, incr ? exprptr(incr) : NULL);
+		OUTPUT("%s", ")");
+
+		c_emit_stmt(file, context, indent, body);
+	}
+
+
+}
+
+void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
+	switch (ast->ast_kind)
+	{
+	case AST_POISONED:
+	case AST_IF_CATCH_SWITCH_STMT:
+	case AST_FOREACH_STMT:
+	case AST_DOC_STMT:
+		UNREACHABLE
+	case AST_EXPR_STMT:
+		//gencontext_emit_expr_stmt(c, ast);
+		c_emit_expr_stmt(file, context, indent, ast);
+		break;
+	case AST_DECLARE_STMT:
+	{
+		//BEValue value;
+		//llvm_emit_local_decl(c, ast->declare_stmt, &value);
+		c_emit_local_decl(file, context, indent, ast->declare_stmt);
+		break;
+	}
+	case AST_BREAK_STMT:
+		c_emit_break(file, context, indent, ast);
+		//llvm_emit_break(c, ast);
+		break;
+	case AST_CONTINUE_STMT:
+		c_emit_continue(file, context, indent, ast);
+		//llvm_emit_continue(c, ast);
+		break;
+	case AST_IF_STMT:
+		c_emit_if(file, context, indent, ast);
+		//llvm_emit_if(c, ast);
+		break;
+	case AST_RETURN_STMT:
+		c_emit_return(file, context, indent, ast);
+		//llvm_emit_return(c, ast);
+		break;
+	case AST_BLOCK_EXIT_STMT:
+		//llvm_emit_block_exit_return(c, ast);
+		break;
+	case AST_COMPOUND_STMT:
+		c_emit_compound_stmt(file, context, indent, ast);
+		//llvm_emit_compound_stmt(c, ast);
+		break;
+	case AST_FOR_STMT:
+		c_emit_for(file, context, indent, ast);
+		//llvm_emit_for_stmt(c, ast);
+		break;
+	case AST_NEXT_STMT:
+		//gencontext_emit_next_stmt(c, ast);
+		break;
+	case AST_DEFER_STMT:
+	case AST_NOP_STMT:
+		break;
+	case AST_ASM_STMT:
+		//llvm_emit_asm_stmt(c, ast);
+		break;
+	case AST_ASSERT_STMT:
+		//llvm_emit_assert_stmt(c, ast);
+		break;
+	case AST_CT_ASSERT:
+	case AST_CT_IF_STMT:
+	case AST_CT_ELSE_STMT:
+	case AST_CT_FOR_STMT:
+	case AST_CT_SWITCH_STMT:
+	case AST_CASE_STMT:
+	case AST_DEFAULT_STMT:
+	case AST_CT_FOREACH_STMT:
+		UNREACHABLE
+	case AST_SWITCH_STMT:
+		//gencontext_emit_switch(c, ast);
+		break;
+	}
+}
+
+void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl) {
+	assert(decl->func_decl.body);
+	AstId current = astptr(decl->func_decl.body)->compound_stmt.first_stmt;
+	while (current)
+	{
+		//llvm_emit_stmt(c, ast_next(&current));
+		c_emit_stmt(file, context, indent, ast_next(&current));
+	}
+}
+/*
+void llvm_emit_function_body(GenContext *c, Decl *decl)
+{
+	DEBUG_LOG("Generating function %s.", decl->extname);
+	assert(decl->backend_ref);
+
+	bool emit_debug = llvm_use_debug(c);
+	LLVMValueRef prev_function = c->function;
+	LLVMBuilderRef prev_builder = c->builder;
+
+
+	c->error_var = NULL;
+	c->catch_block = NULL;
+
+	c->function = decl->backend_ref;
+	if (emit_debug)
+	{
+		c->debug.function = LLVMGetSubprogram(c->function);
+		if (c->debug.enable_stacktrace)
+		{
+			scratch_buffer_clear();
+			scratch_buffer_append(decl->unit->module->name->module);
+			scratch_buffer_append("::");
+			scratch_buffer_append(decl->name ? decl->name : "anon");
+			c->debug.func_name = llvm_emit_zstring(c, scratch_buffer_to_string());
+
+			File *file = source_file_by_id(decl->span.file_id);
+			c->debug.file_name = llvm_emit_zstring(c, file->name);
+		}
+	}
+
+	c->cur_func_decl = decl;
+
+	LLVMBasicBlockRef entry = LLVMAppendBasicBlockInContext(c->context, c->function, "entry");
+	c->current_block = entry;
+	c->current_block_is_target = true;
+	c->in_block = 0;
+	c->builder = LLVMCreateBuilderInContext(c->context);
+	LLVMPositionBuilderAtEnd(c->builder, entry);
+
+	LLVMValueRef alloca_point = LLVMBuildAlloca(c->builder, LLVMInt32TypeInContext(c->context), "alloca_point");
+	c->alloca_point = alloca_point;
+
+	FunctionPrototype *prototype = decl->type->func.prototype;
+	unsigned arg = 0;
+
+	if (emit_debug)
+	{
+		llvm_debug_scope_push(c, c->debug.function);
+		if (c->debug.enable_stacktrace)
+		{
+			LLVMTypeRef slot_type = c->debug.stack_type;
+			LLVMTypeRef ptr_to_slot_type = LLVMPointerType(slot_type, 0);
+			if (!c->debug.last_ptr)
+			{
+				const char *name = ".$last_stack";
+				LLVMValueRef last_stack = c->debug.last_ptr = llvm_add_global_type(c, name, ptr_to_slot_type, 0);
+				LLVMSetThreadLocal(last_stack, true);
+				LLVMSetInitializer(last_stack, LLVMConstNull(ptr_to_slot_type));
+				llvm_set_weak(c, last_stack);
+			}
+			AlignSize alignment = llvm_abi_alignment(c, slot_type);
+			c->debug.stack_slot = llvm_emit_alloca(c, slot_type, alignment, ".$stackslot");
+			AlignSize align_to_use;
+			LLVMValueRef prev_ptr = llvm_emit_struct_gep_raw(c, c->debug.stack_slot, slot_type, 0, alignment, &align_to_use);
+			llvm_store(c, prev_ptr, LLVMBuildLoad2(c->builder, ptr_to_slot_type, c->debug.last_ptr, ""), align_to_use);
+			LLVMValueRef func_name = llvm_emit_struct_gep_raw(c, c->debug.stack_slot, slot_type, 1, alignment, &align_to_use);
+			llvm_store(c, func_name, c->debug.func_name, align_to_use);
+			LLVMValueRef file_name = llvm_emit_struct_gep_raw(c, c->debug.stack_slot, slot_type, 2, alignment, &align_to_use);
+			llvm_store(c, file_name, c->debug.file_name, align_to_use);
+			c->debug.stack_slot_row = llvm_emit_struct_gep_raw(c, c->debug.stack_slot, slot_type, 3, alignment, &align_to_use);
+			llvm_store(c, c->debug.last_ptr, c->debug.stack_slot, type_alloca_alignment(type_voidptr));
+		}
+	}
+
+	c->failable_out = NULL;
+	c->return_out = NULL;
+	if (prototype->ret_abi_info->kind == ABI_ARG_INDIRECT)
+	{
+		if (prototype->is_failable)
+		{
+			c->failable_out = LLVMGetParam(c->function, arg++);
+		}
+		else
+		{
+			c->return_out = LLVMGetParam(c->function, arg++);
+		}
+	}
+	if (prototype->ret_by_ref_abi_info)
+	{
+		assert(!c->return_out);
+		c->return_out = LLVMGetParam(c->function, arg++);
+	}
+
+
+	if (!decl->func_decl.attr_naked)
+	{
+		// Generate LLVMValueRef's for all parameters, so we can use them as local vars in code
+		VECEACH(decl->func_decl.function_signature.params, i)
+		{
+			llvm_emit_parameter(c, decl->func_decl.function_signature.params[i], prototype->abi_args[i], &arg, i);
+		}
+	}
+
+	LLVMSetCurrentDebugLocation2(c->builder, NULL);
+
+	assert(decl->func_decl.body);
+	AstId current = astptr(decl->func_decl.body)->compound_stmt.first_stmt;
+	while (current)
+	{
+		llvm_emit_stmt(c, ast_next(&current));
+	}
+
+	if (c->current_block && llvm_basic_block_is_unused(c->current_block))
+	{
+		LLVMBasicBlockRef prev_block = LLVMGetPreviousBasicBlock(c->current_block);
+		LLVMDeleteBasicBlock(c->current_block);
+		c->current_block = prev_block;
+		LLVMPositionBuilderAtEnd(c->builder, c->current_block);
+	}
+	// Insert a return (and defer) if needed.
+	if (c->current_block && !LLVMGetBasicBlockTerminator(c->current_block))
+	{
+		llvm_emit_return_implicit(c);
+	}
+
+	// erase alloca point
+	if (LLVMGetInstructionParent(alloca_point))
+	{
+		c->alloca_point = NULL;
+		LLVMInstructionEraseFromParent(alloca_point);
+	}
+
+	LLVMDisposeBuilder(c->builder);
+	c->builder = NULL;
+
+	if (llvm_use_debug(c))
+	{
+		llvm_debug_scope_pop(c);
+	}
+
+	c->builder = prev_builder;
+	c->function = prev_function;
 }
 */
