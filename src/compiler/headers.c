@@ -2301,7 +2301,6 @@ void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
 
 void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl) {
 	assert(decl->func_decl.body);
-	//decl->func_decl.
 
 	// output the function signature
 	printf("c_emit_function_body: %s\n", decl->name);
@@ -2327,10 +2326,21 @@ void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl) {
 		//c->return_out = LLVMGetParam(c->function, arg++);
 	}
 
+	Type* return_type = prototype->rtype;
+
+	uint32_t return_type_start = scratch_buffer.len;
+	c_type_append_name_to_scratch(return_type, "");
+	uint32_t return_type_end = scratch_buffer.len;
+	OUTPUT("%.*s %s", (return_type_end-return_type_start), &scratch_buffer.str[return_type_start],
+		decl->extname);
+	scratch_buffer.len = return_type_start;
+
+	//c_type_append_name_to_scratch(decl->func_decl.function_signature.returntype)
+
 
 	if (!decl->func_decl.attr_naked)
 	{
-		// Generate LLVMValueRef's for all parameters, so we can use them as local vars in code
+		// Generate the full signature (w/ names) for all parameters, so we can use them as local vars in code
 		OUTPUT("%.*s", 1, "(");
 
 		unsigned params_size = vec_size(decl->func_decl.function_signature.params);
@@ -2348,8 +2358,8 @@ void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl) {
 		//		VECEACH(decl->func_decl.function_signature.params, i)
 		for (unsigned i = 1; i < params_size; i++)
 		{
-			Type* param_type = decl->func_decl.function_signature.params[0]->type;
-			const char* param_name = decl->func_decl.function_signature.params[0]->name;
+			Type* param_type = decl->func_decl.function_signature.params[i]->type;
+			const char* param_name = decl->func_decl.function_signature.params[i]->name;
 
 			uint32_t param_start = scratch_buffer.len;
 			scratch_buffer_append_len(", ", 2);
@@ -2363,12 +2373,12 @@ void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl) {
 			*/
 		}
 
-		OUTPUT("%.*s", 1, ")");
+		OUTPUT("%.*s", 2, ") ");
 	}
 
 
 	// output the function
-	OUTPUT("%s", "{");
+	OUTPUT("%s", "{\n");
 	AstId current = astptr(decl->func_decl.body)->compound_stmt.first_stmt;
 	while (current)
 	{
