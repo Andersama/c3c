@@ -1382,9 +1382,12 @@ void c_emit_local_decl(FILE* file, void* context, int indent, Decl* decl) {
 		uint32_t type_named_start = scratch_buffer.len;
 		c_type_append_name_to_scratch(decl->type, decl->name);
 		uint32_t type_named_end = scratch_buffer.len;
-		OUTPUT("%.*s = {0}", (type_named_end - type_named_start), &scratch_buffer.str[type_named_start]);
+		OUTPUT("%.*s = ", (type_named_end - type_named_start), &scratch_buffer.str[type_named_start]);
 
 		scratch_buffer.len = type_named_start;
+
+		c_emit_expr(file, context, indent, NULL, init);
+		//c_emit_assign_expr(file, context, indent, NULL, init);
 		//TODO!
 		//c_emit_assign_expr(file, context, indent, NULL, decl->var.init_expr);
 	} else if (decl->var.no_init) {
@@ -1548,11 +1551,13 @@ void c_emit_if(FILE* file, void* context, int indent, Ast* ast) {
 			INDENT();
 			OUTPUT("%s", "{\n");
 			//print statements
-			c_emit_statement_chain(file, context, indent, ast->if_stmt.then_body);
+			c_emit_statement_chain(file, context, indent+1, ast->if_stmt.then_body);
+			INDENT();
 			OUTPUT("%s", "}\n");
 		} else {
 			INDENT();
 			OUTPUT("%s", "{\n"); //dropping stmts
+			INDENT();
 			OUTPUT("%s", "}\n");
 		}
 
@@ -1562,7 +1567,8 @@ void c_emit_if(FILE* file, void* context, int indent, Ast* ast) {
 		{
 			INDENT();
 			OUTPUT("%s", "else {\n");
-			c_emit_statement_chain(file, context, indent, ast->if_stmt.else_body);
+			c_emit_statement_chain(file, context, indent+1, ast->if_stmt.else_body);
+			INDENT();
 			OUTPUT("%s", "}\n");
 		}
 	}
@@ -1585,7 +1591,6 @@ void c_emit_statement_chain(FILE* file, void* context, int indent, AstId current
 
 	while (current)
 	{
-		//INDENT();
 		c_emit_stmt(file, context, indent, ast_next(&current));
 		//llvm_emit_stmt(c, ast_next(&current));
 	}
@@ -1596,7 +1601,7 @@ void c_emit_statement_chain(FILE* file, void* context, int indent, AstId current
 //llvm_emit_return
 void c_emit_return(FILE* file, struct GenContext* context, int indent, Ast* ast) {
 	printf(__FUNCDNAME__":%s", "\n");
-	//INDENT();
+	INDENT();
 
 	Expr* expr = ast->return_stmt.expr;
 	//expr->type
@@ -1655,8 +1660,13 @@ void c_emit_compound_stmt(FILE* file, void* context, int indent, Ast* ast)
 		llvm_debug_push_lexical_scope(c, ast->span);
 	}
 	*/
+	//think this is {stmt;stmt;...etc};
 	assert(ast->ast_kind == AST_COMPOUND_STMT);
-	c_emit_statement_chain(file, context, indent, ast->compound_stmt.first_stmt);
+	INDENT();
+	OUTPUT("%s", "{\n");
+	c_emit_statement_chain(file, context, indent+1, ast->compound_stmt.first_stmt);
+	INDENT();
+	OUTPUT("%s", "}\n");
 	//llvm_emit_statement_chain(c, ast->compound_stmt.first_stmt);
 	/*
 	if (llvm_use_debug(c))
@@ -2536,8 +2546,21 @@ void c_emit_for(FILE* file, void* context, int indent, Ast* ast) {
 		//struct BEValue dummy = { 0 };
 
 		OUTPUT("%s", "do {");
-		if (body)
-			c_emit_stmt(file, context, indent, body);
+		if (body) {
+			if (body->ast_kind == AST_COMPOUND_STMT) {
+				//c_emit_stmt(file, context, indent, body);
+				//c_emit_compound_stmt(file, context, indent, body);
+				//INDENT();
+				OUTPUT("%s", "{\n");
+				c_emit_statement_chain(file, context, indent + 1, body->compound_stmt.first_stmt);
+				INDENT();
+				OUTPUT("%s", "}\n");
+			}
+			else {
+				OUTPUT("%s", "\n");
+				c_emit_stmt(file, context, indent + 1, body);
+			}
+		}
 		INDENT();
 		OUTPUT("%s", "} while (");
 		c_emit_expr(file, context, indent, NULL, cond ? exprptr(cond) : NULL);
@@ -2555,9 +2578,21 @@ void c_emit_for(FILE* file, void* context, int indent, Ast* ast) {
 		OUTPUT("%s", ";");
 		if (incr)
 			c_emit_expr(file, context, indent, NULL, incr ? exprptr(incr) : NULL);
-		OUTPUT("%s", ") {\n");
-		c_emit_stmt(file, context, indent, body);
-		OUTPUT("%s", "}\n");
+		OUTPUT("%s", ") ");
+		if (body) {
+			if (body->ast_kind == AST_COMPOUND_STMT) {
+				//c_emit_stmt(file, context, indent, body);
+				//c_emit_compound_stmt(file, context, indent, body);
+				//INDENT();
+				OUTPUT("%s", "{\n");
+				c_emit_statement_chain(file, context, indent + 1, body->compound_stmt.first_stmt);
+				INDENT();
+				OUTPUT("%s", "}\n");
+			} else {
+				OUTPUT("%s", "\n");
+				c_emit_stmt(file, context, indent + 1, body);
+			}
+		}
 	}
 
 
@@ -2668,6 +2703,7 @@ void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
 	{
 		//BEValue value;
 		//llvm_emit_local_decl(c, ast->declare_stmt, &value);
+		INDENT();
 		c_emit_local_decl(file, context, indent, ast->declare_stmt);
 		OUTPUT("%s", ";\n");
 		return;
@@ -2711,7 +2747,50 @@ void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
 		TODO;
 		break;
 	case AST_ASSERT_STMT:
-		TODO;
+		if (active_target.feature.safe_mode)
+		{
+			ExprId exprid = ast->assert_stmt.expr;
+			Expr* assert_expr = exprptr(exprid);
+
+			OUTPUT("%s", "assert(");
+			c_emit_expr(file, context, indent, NULL, assert_expr);
+			const char* str;
+			ArraySize str_sz;
+			if (ast->assert_stmt.message)
+			{
+				Expr* msg_expr = exprptr(ast->assert_stmt.message);
+				str = msg_expr->const_expr.string.chars;
+				str_sz = msg_expr->const_expr.string.len;
+			}
+			else
+			{
+				str = "Assert violation";
+				str_sz = 16;
+			}
+
+			uint32_t escaped_string_start = scratch_buffer.len;
+			
+			//octal escaping
+			for (unsigned i = 0; str_sz; i++) {
+				uint8_t c = str[i];
+				if ((c < 0x20) | (c > 0x7E)) { //needs_escapeing(c)
+					//octal escaping (always do 3 to make it easy)
+					scratch_buffer_append_char('\\');
+					scratch_buffer_append_char((c >> 6) + '0');
+					scratch_buffer_append_char(((c >> 3) & 0x3) + '0');
+					scratch_buffer_append_char((c & 0x3) + '0');
+				}
+				else {
+					scratch_buffer_append_char(c);
+				}
+			}
+			uint32_t escaped_string_end = scratch_buffer.len;
+
+			OUTPUT(" && %.*s);\n", (escaped_string_end-escaped_string_start), &scratch_buffer.str[escaped_string_start]);
+
+			scratch_buffer.len = escaped_string_start;
+		}
+		//TODO;
 		//llvm_emit_assert_stmt(c, ast);
 		break;
 	case AST_CT_ASSERT:
@@ -2815,19 +2894,18 @@ void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl) {
 	// output the function
 	OUTPUT("%s", "{\n");
 	AstId current = astptr(decl->func_decl.body)->compound_stmt.first_stmt;
-
 	//int new_indent = indent+1;
 	//indent += 1;
-	//c_emit_statement_chain(file, context, indent + 1, current);
+	c_emit_statement_chain(file, context, indent + 1, current);
 	//indent += 1;
-
+	/*
 	while (current)
 	{
 		//llvm_emit_stmt(c, ast_next(&current));
 		//INDENT();
 		c_emit_stmt(file, context, indent, ast_next(&current));
 	}
-	
+	*/
 	OUTPUT("%s", "}\n");
 
 }
