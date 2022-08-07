@@ -2,7 +2,8 @@
 // Use of this source code is governed by a LGPLv3.0
 // a copy of which can be found in the LICENSE file.
 
-#include "compiler_internal.h"
+//#include "compiler_internal.h"
+#include "codegen_internal.h"
 #include "base_n.h"
 
 #define OUTPUT(x, ...) fprintf(file, x, ## __VA_ARGS__)
@@ -11,9 +12,12 @@
 static void c_type_append_func_to_scratch(FunctionPrototype* prototype, const char* name);
 static void c_type_append_name_to_scratch(Type* type, const char* name);
 
-void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr);
-void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast);
-void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl);
+static void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr);
+static void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast);
+static void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl);
+static void c_emit_statement_chain(FILE* file, void* context, int indent, AstId current);
+
+static void c_emit_assign_expr(FILE* file, void* context, int ident, struct BEValue* value, Expr* expr);
 
 static void indent_line(FILE* file, int indent)
 {
@@ -33,7 +37,7 @@ static void header_gen_function_decl(FILE* file, SemaContext* c, Decl* decl)
 {
 	assert(decl->decl_kind == DECL_FUNC);
 	//if we want print documentation and comments
-	fprintf(file, "/* function */\n");
+	fprintf(file, "/* function prototype %s */\n", decl->name);
 
 	FunctionPrototype* prototype = decl->type->func.prototype;
 
@@ -134,7 +138,7 @@ static void header_gen_function_decl(FILE* file, SemaContext* c, Decl* decl)
 	scratch_buffer.len = return_type_start;
 
 	if (decl->extname && *decl->extname) {
-		OUTPUT("%s", decl->name);
+		OUTPUT("%s", decl->extname);
 	}
 	else if (decl->name && *decl->name) {
 		OUTPUT("%s", decl->name);
@@ -541,7 +545,7 @@ static const char base62_alphabet_extended[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef
 
 static void c_type_append_name_to_scratch(Type* type, const char* name)
 {
-	printf("c_type_append_name_to_scratch: %s\n", name);
+	//printf("c_type_append_name_to_scratch: %s\n", name);
 	type = type->canonical;
 RETRY:
 	switch (type->type_kind)
@@ -1337,44 +1341,181 @@ void c_emit_local_decl(FILE* file, void* context, int indent, Decl* decl) {
 	if (decl->var.is_static)
 	{
 		INDENT();
-		OUTPUT("%s", "static ");
+		//OUTPUT("%s", "static ");
 		if (decl->backend_ref) {
 			return;
 		}
 
 		if (IS_FAILABLE(decl))
 		{
-
+			OUTPUT("%s$f", decl->extname);
 		}
+		return;
 	}
+
+	if (IS_FAILABLE(decl)) {
+		OUTPUT("%s.f", decl->extname);
+		return;
+	}
+
+	Expr* init = decl->var.init_expr;
+	if (init) {
+		c_emit_assign_expr(file, context, indent, NULL, decl->var.init_expr);
+	} else if (decl->var.no_init) {
+		
+	} else {
+		if (decl->var.failable_ref) {
+			
+		}
+		//zero initialize ? (in c this is = {0});
+		//Type* type = ;
+		uint32_t type_named_start = scratch_buffer.len;
+		c_type_append_name_to_scratch(decl->type, decl->name);
+		uint32_t type_named_end = scratch_buffer.len;
+		OUTPUT("%.*s = {0};", (type_named_end-type_named_start), &scratch_buffer.str[type_named_start]);
+	}
+
+	OUTPUT("%s", decl->extname);
 	//TODO;
 }
 
+void c_emit_switch_body(FILE* file, void* context, int indent, Ast* switch_ast, Ast* if_ast)
+{
+	Expr* cond = exprptr(if_ast->if_stmt.cond);
+
+	bool is_if_chain = switch_ast->switch_stmt.flow.if_chain;
+
+	Ast** cases = switch_ast->switch_stmt.cases;
+	uint32_t case_count = vec_size(cases);
+	if (!case_count) {
+		return;
+	}
+
+	if (is_if_chain) {
+		Ast* default_case = NULL; //default case becomes "else"
+		int is_first_case = 1;
+		for (unsigned i = 0; i < case_count; i++) {
+			Ast* case_stmt = cases[i];
+
+			if (!case_stmt->case_stmt.expr) {
+				default_case = case_stmt;
+				continue;
+			}
+
+			if ((i+1) << case_count) {
+				INDENT();
+				OUTPUT("%s", is_first_case ? "if (" : "else if (");
+				Expr* to_expr = case_stmt->case_stmt.to_expr;
+				if (to_expr) {
+					OUTPUT("%s", "((");
+					c_emit_expr(file, context, indent, NULL, cond);
+					OUTPUT("%s", ") >= ");
+					//c_emit_op(file, context, indent, BINARYOP_GE);
+					c_emit_expr(file, context, indent, NULL, case_stmt->case_stmt.expr);
+					OUTPUT("%s", ") && ((");
+					c_emit_expr(file, context, indent, NULL, cond);
+					OUTPUT("%s", ") <= ");
+					//c_emit_op(file, context, indent, BINARYOP_LE);
+					c_emit_expr(file, context, indent, NULL, to_expr);
+					OUTPUT("%s", ")");
+
+					//c_emit_comparison()
+				} else {
+					OUTPUT("%s", "(");
+					c_emit_expr(file, context, indent, NULL, cond);
+					OUTPUT("%s", ") == ");
+					//c_emit_op(file, context, indent, BINARYOP_GE);
+					c_emit_expr(file, context, indent, NULL, case_stmt->case_stmt.expr);
+
+					//c_emit_comparison();
+				}
+				OUTPUT("%s", ") {\n");
+				if (case_stmt->case_stmt.body) {
+					c_emit_stmt(file, context, indent, case_stmt->case_stmt.body);
+					//llvm_emit_stmt(c, case_stmt->case_stmt.body);
+				}
+				OUTPUT("%s", "}");
+			} else if (i == case_count) {
+				INDENT();
+				OUTPUT("%s", default_case ? "else if (" : "else {\n");
+				if (default_case) { //we have a default case to handle after
+					Expr* to_expr = case_stmt->case_stmt.to_expr;
+					if (to_expr) {
+						OUTPUT("%s", "((");
+						c_emit_expr(file, context, indent, NULL, cond);
+						OUTPUT("%s", ") >= ");
+						//c_emit_op(file, context, indent, BINARYOP_GE);
+						c_emit_expr(file, context, indent, NULL, case_stmt->case_stmt.expr);
+						OUTPUT("%s", ") && ((");
+						c_emit_expr(file, context, indent, NULL, cond);
+						OUTPUT("%s", ") <= ");
+						//c_emit_op(file, context, indent, BINARYOP_LE);
+						c_emit_expr(file, context, indent, NULL, to_expr);
+						OUTPUT("%s", ")");
+
+						//c_emit_comparison()
+					} else {
+						OUTPUT("%s", "(");
+						c_emit_expr(file, context, indent, NULL, cond);
+						OUTPUT("%s", ") == ");
+						//c_emit_op(file, context, indent, BINARYOP_GE);
+						c_emit_expr(file, context, indent, NULL, case_stmt->case_stmt.expr);
+
+						//c_emit_comparison();
+					}
+					OUTPUT("%s", ") {\n");
+				}
+				if (case_stmt->case_stmt.body) {
+					c_emit_stmt(file, context, indent, case_stmt->case_stmt.body);
+				}
+
+				OUTPUT("%s", "}");
+			}
+
+			is_first_case = 0;
+		}
+	}
+}
+
+//llvm_emit_if
 void c_emit_if(FILE* file, void* context, int indent, Ast* ast) {
 	printf(__FUNCDNAME__":%s", "\n");
 	INDENT();
 
 	Expr* cond = exprptr(ast->if_stmt.cond);
-	OUTPUT("%s", "if (");
-	c_emit_expr(file, context, indent, NULL, cond);
-	//emit the condition
-	OUTPUT("%s", ")");
-
 	Ast* then_body = astptr(ast->if_stmt.then_body);
-	if (ast_is_not_empty(then_body))
-	{
-		INDENT();
-		OUTPUT("%s", "else {");
-		OUTPUT("%s", "}");
-	}
 
-	AstId else_id = ast->if_stmt.else_body;
-	Ast* else_body = else_id ? astptr(else_id) : NULL;
-	if (ast_is_not_empty(else_body))
-	{
-		INDENT();
-		OUTPUT("%s", "{");
-		OUTPUT("%s", "}");
+	if (then_body->ast_kind == AST_IF_CATCH_SWITCH_STMT) {
+		//switch stmt
+		c_emit_switch_body(file, context, indent, then_body, ast);
+	} else {
+		OUTPUT("%s", "if (");
+		c_emit_expr(file, context, indent, NULL, cond);
+		//emit the condition
+		OUTPUT("%s", ") ");
+
+		if (ast_is_not_empty(then_body))
+		{
+			INDENT();
+			OUTPUT("%s", "{\n");
+			//print statements
+			c_emit_statement_chain(file, context, indent, ast->if_stmt.then_body);
+			OUTPUT("%s", "}\n");
+		} else {
+			INDENT();
+			OUTPUT("%s", "{\n"); //dropping stmts
+			OUTPUT("%s", "}\n");
+		}
+
+		AstId else_id = ast->if_stmt.else_body;
+		Ast* else_body = else_id ? astptr(else_id) : NULL;
+		if (ast_is_not_empty(else_body))
+		{
+			INDENT();
+			OUTPUT("%s", "else {\n");
+			c_emit_statement_chain(file, context, indent, ast->if_stmt.else_body);
+			OUTPUT("%s", "}\n");
+		}
 	}
 }
 
@@ -1401,6 +1542,7 @@ void c_emit_statement_chain(FILE* file, void* context, int indent, AstId current
 }
 
 //GenContext *context
+//llvm_emit_return
 void c_emit_return(FILE* file, struct GenContext* context, int indent, Ast* ast) {
 	printf(__FUNCDNAME__":%s", "\n");
 	//INDENT();
@@ -1408,6 +1550,18 @@ void c_emit_return(FILE* file, struct GenContext* context, int indent, Ast* ast)
 	Expr* expr = ast->return_stmt.expr;
 	//expr->type
 	Type* return_ty = expr->type; //? the return type?
+
+	if (expr && expr->expr_kind == EXPR_FAILABLE) {
+		if (expr->inner_expr)
+			c_emit_expr(file, context, indent, NULL, expr->inner_expr);
+		c_emit_statement_chain(file, context, indent, ast->return_stmt.cleanup);
+		//llvm_emit_return_abi();
+		//c_emit_return_abi();
+
+		printf(__FUNCDNAME__":%s", "failable expr \n");
+		OUTPUT("%s", "return some_failable;\n");
+		return;
+	}
 	/*
 	if (return_ty && (return_ty)->canonical && type_is_failable(return_ty)) //context->cur_func_decl->type->func.prototype->rtype
 	{
@@ -1420,6 +1574,15 @@ void c_emit_return(FILE* file, struct GenContext* context, int indent, Ast* ast)
 		//c_emit_return_abi(file, context, indent, , );
 	}
 	*/
+
+	/*
+	if (type_is_failable(c->cur_func_decl->type->func.prototype->rtype)) {
+		
+	}
+	*/
+	//all the things which need to happen before we return?
+	c_emit_statement_chain(file, context, indent, ast->return_stmt.cleanup);
+
 	printf(__FUNCDNAME__":%s", "return \n");
 	OUTPUT("%s", "return");
 
@@ -1470,6 +1633,97 @@ void c_emit_builtin_access(FILE* file, void* context, int indent, Expr* expr) {
 	case ACCESS_TYPEOFANY: {
 
 	}break;
+	}
+}
+
+const char* constkind_names[] = {
+	"CONST_FLOAT",
+	"CONST_INTEGER",
+	"CONST_BOOL",
+	"CONST_ENUM",
+	"CONST_ERR",
+	"CONST_BYTES",
+	"CONST_STRING",
+	"CONST_POINTER",
+	"CONST_TYPEID",
+	"CONST_LIST"
+};
+
+//llvm_emit_const_expr
+static void c_emit_const_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
+	ConstKind const_kind = expr->const_expr.const_kind;
+	printf(__FUNCDNAME__": [%d] %s\n", const_kind, constkind_names[const_kind]);
+	Type* type = type_lowering(expr->type)->canonical;
+
+	switch (const_kind) {
+	case CONST_FLOAT:
+		//expr->const_expr.fxx
+		//OUTPUT("%lf", expr->const_expr.fxx.f);
+		break;
+	case CONST_INTEGER:
+		Int128 i = expr->const_expr.ixx.i;
+		switch (expr->const_expr.ixx.type) {
+		case TYPE_I128:
+		{
+			//TODO;
+			break;
+		}
+		case TYPE_U128:
+		{
+			//TODO;
+			break;
+		}
+		default:
+			OUTPUT("%lld", i.low);
+			break;
+		}
+		break;
+	case CONST_BOOL:
+		//
+		OUTPUT("%d", expr->const_expr.b ? 1 : 0);
+		break;
+	case CONST_ENUM:
+		break;
+	case CONST_ERR:
+		break;
+	case CONST_BYTES:
+		//type checking
+		assert(type->array.base == type_char);
+		break;
+	case CONST_STRING:
+		//OUTPUT("%s", "\"");
+		uint32_t escaped_string_start = scratch_buffer.len;
+		const char* str = expr->const_expr.string.chars;
+		ArraySize str_sz = expr->const_expr.string.len;
+		//octal escaping
+		for (unsigned i = 0; str_sz; i++) {
+			uint8_t c = str[i];
+			if ((c < 0x20) | (c > 0x7E)) { //needs_escapeing(c)
+				//octal escaping (always do 3 to make it easy)
+				scratch_buffer_append_char('\\');
+				scratch_buffer_append_char((c >> 6) + '0');
+				scratch_buffer_append_char(((c >> 3) & 0x3) + '0');
+				scratch_buffer_append_char((c & 0x3) + '0');
+			} else {
+				scratch_buffer_append_char(c);
+			}
+		}
+		uint32_t escaped_string_end = scratch_buffer.len;
+
+		OUTPUT("\"%.*s\"", (escaped_string_end - escaped_string_start), &scratch_buffer.str[escaped_string_start]);
+		scratch_buffer.len = escaped_string_start;
+
+		break;
+	case CONST_POINTER:
+		//const null?
+		OUTPUT("%s", "((void*)0)");
+		break;
+	case CONST_TYPEID:
+		break;
+	case CONST_LIST:
+		//llvm_emit_const_initializer_list_expr
+		//c_emit_const_initializer_list_expr()
+		break;
 	}
 }
 
@@ -1612,8 +1866,15 @@ static void c_emit_unary_expr(FILE* file, void* context, int indent, struct BEVa
 	UNREACHABLE
 }
 
+//llvm_emit_assign_expr
 static void c_emit_assign_expr(FILE* file, void* context, int ident, struct BEValue* value, Expr* expr) {
 	printf(__FUNCDNAME__":%s", "\n");
+	
+	if (IS_FAILABLE(expr)) {
+		
+	}
+
+
 }
 
 static void c_emit_op(FILE* file, void* context, int ident, uint32_t op) {
@@ -1741,14 +2002,63 @@ static void c_emit_op(FILE* file, void* context, int ident, uint32_t op) {
 	}
 }
 
-static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
-	printf(__FUNCDNAME__":%s", "\n");
+static void c_emit_ternary_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
+	if (!expr->ternary_expr.then_expr) {
+		//?elvis?
+		return;
+	}
+	Expr* cond_expr = exprptr(expr->ternary_expr.cond);
+	Expr* then_expr = exprptr(expr->ternary_expr.then_expr);
+	Expr* else_expr = exprptr(expr->ternary_expr.else_expr);
+	c_emit_expr(file, context, indent, value, cond_expr);
+	OUTPUT("%s", " ? ");
+	c_emit_expr(file, context, indent, value, then_expr);
+	OUTPUT("%s", " : ");
+	c_emit_expr(file, context, indent, value, else_expr);
+}
 
+const char* binaryop_names[] = {
+	"BINARYOP_ERROR",
+	"BINARYOP_MULT",
+	"BINARYOP_SUB",
+	"BINARYOP_ADD",
+	"BINARYOP_DIV",
+	"BINARYOP_MOD",
+	"BINARYOP_SHR",
+	"BINARYOP_SHL",
+	"BINARYOP_BIT_OR",
+	"BINARYOP_BIT_XOR",
+	"BINARYOP_BIT_AND",
+	"BINARYOP_AND",
+	"BINARYOP_OR",
+	"BINARYOP_OR_ERR",
+	"BINARYOP_GT",
+	"BINARYOP_GE",
+	"BINARYOP_LT",
+	"BINARYOP_LE",
+	"BINARYOP_NE",
+	"BINARYOP_EQ",
+	"BINARYOP_ASSIGN",
+	"BINARYOP_ADD_ASSIGN",
+	"BINARYOP_BIT_AND_ASSIGN",
+	"BINARYOP_BIT_OR_ASSIGN",
+	"BINARYOP_BIT_XOR_ASSIGN",
+	"BINARYOP_DIV_ASSIGN",
+	"BINARYOP_MOD_ASSIGN",
+	"BINARYOP_MULT_ASSIGN",
+	"BINARYOP_SHR_ASSIGN",
+	"BINARYOP_SHL_ASSIGN",
+	"BINARYOP_SUB_ASSIGN"
+};
+
+static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
 	BinaryOp binary_op = expr->binary_expr.operator;
+	printf(__FUNCDNAME__": [%d] %s\n", binary_op, binaryop_names[binary_op]);
 	/*
 	if (binary_op >= BINARYOP_ASSIGN && expr_is_vector_index(exprptr(expr->binary_expr.left)))
 	{
 		//llvm_emit_vector_assign_expr(c, be_value, expr);
+		OUTPUT("%s", "");
 		return;
 	}
 	*/
@@ -1757,6 +2067,8 @@ static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEV
 		BinaryOp base_op = binaryop_assign_base_op(binary_op);
 		assert(base_op != BINARYOP_ERROR);
 		c_emit_expr(file, context, indent, NULL, exprptr(expr->binary_expr.left));
+		OUTPUT("%s", " ");
+		c_emit_op(file, context, indent, binary_op);
 		OUTPUT("%s", " ");
 		c_emit_expr(file, context, indent, NULL, exprptr(expr->binary_expr.right));
 		/*
@@ -1776,6 +2088,7 @@ static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEV
 	if (binary_op == BINARYOP_ASSIGN)
 	{
 		Expr* left = exprptr(expr->binary_expr.left);
+		Expr* right = exprptr(expr->binary_expr.right);
 		c_emit_expr(file, context, indent, NULL, left);
 		/*
 		if (left->expr_kind == EXPR_IDENTIFIER) {
@@ -1783,7 +2096,8 @@ static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEV
 			OUTPUT("%s", left->identifier_expr.ident);
 		}
 		*/
-		OUTPUT("%s", "=");
+		OUTPUT("%s", " = ");
+		c_emit_expr(file, context, indent, NULL, right);
 
 
 		/*
@@ -1799,6 +2113,15 @@ static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEV
 		* */
 		return;
 	}
+
+	// everything else
+	c_emit_expr(file, context, indent, NULL, exprptr(expr->binary_expr.left));
+	OUTPUT("%s", " ");
+	c_emit_op(file, context, indent, binary_op);
+	OUTPUT("%s", " ");
+	c_emit_expr(file, context, indent, NULL, exprptr(expr->binary_expr.right));
+
+
 }
 
 #if 0
@@ -1858,7 +2181,7 @@ void c_emit_subscript(FILE* file, void* context, int indent, struct BEValue* val
 	*/
 	c_emit_expr(file, context, indent, value, parent_expr);
 	//c_emit_len_for_expr();
-	llvm_emit_len_for_expr();
+	//llvm_emit_len_for_expr();
 	/*
 	bool needs_len = false;
 	if (parent_type_kind == TYPE_SUBARRAY)
@@ -1933,6 +2256,17 @@ const char* expr_kind_names[] = {
 	"EXPR_VARIANT",
 	"EXPR_BUILTIN_ACCESS"
 };
+
+void c_emit_cast_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
+	//expr->type (to type)
+	//exprtype(expr->cast_expr.expr) (from type)
+	uint32_t to_type_start = scratch_buffer.len;
+	c_type_append_name_to_scratch(expr->type, "");
+	uint32_t to_type_end = scratch_buffer.len;
+	OUTPUT("(%.*s)", (to_type_end-to_type_start), &scratch_buffer.str[to_type_start]);
+
+	c_emit_expr(file, context, indent, value, exprptr(expr->cast_expr.expr));
+}
 
 void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
 	printf(__FUNCDNAME__": [%i] %s\n", expr->expr_kind, expr_kind_names[expr->expr_kind]);
@@ -2019,7 +2353,7 @@ void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, E
 		//llvm_emit_unary_expr(c, value, expr);
 		return;
 	case EXPR_CONST:
-
+		c_emit_const_expr(file, context, indent, value, expr);
 		//llvm_emit_const_expr(c, value, expr);
 		return;
 	case EXPR_MACRO_BODY_EXPANSION:
@@ -2033,10 +2367,12 @@ void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, E
 		//llvm_emit_binary_expr(c, value, expr);
 		return;
 	case EXPR_TERNARY:
+		c_emit_ternary_expr(file, context, indent, value, expr);
 		//gencontext_emit_ternary_expr(c, value, expr);
 		return;
 	case EXPR_POST_UNARY:
 		//llvm_emit_post_unary_expr(c, value, expr);
+		//c_emit_post_unary_expr()
 		return;
 	case EXPR_FORCE_UNWRAP:
 		//llvm_emit_force_unwrap_expr(c, value, expr);
@@ -2074,6 +2410,7 @@ void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, E
 		return;
 	case EXPR_CAST:
 		//gencontext_emit_cast_expr(c, value, expr);
+		c_emit_cast_expr(file, context, indent, value, expr);
 		return;
 	case EXPR_BITACCESS:
 		//llvm_emit_bitaccess(c, value, expr);
