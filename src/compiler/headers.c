@@ -16,15 +16,31 @@ static void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* v
 static void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast);
 static void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl);
 static void c_emit_statement_chain(FILE* file, void* context, int indent, AstId current);
+static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr);
 
 static void c_emit_assign_expr(FILE* file, void* context, int ident, struct BEValue* value, Expr* expr);
+static void c_emit_op(FILE* file, void* context, int ident, uint32_t op);
 
 static void indent_line(FILE* file, int indent)
 {
+	//printf(__FUNCDNAME__":%d %i\n", indent, scratch_buffer.len);
+	/*
 	for (int i = 0; i < indent * 3; i++)
 	{
 		fputc(' ', file);
 	}
+	*/
+	/*
+	for (int i = 0; i < indent; i++) {
+		fwrite("    ", 1, 4, file);
+	}
+	*/
+	
+	for (int i = 0; i < indent; i++) {
+		OUTPUT("%s", "    ");
+		//OUTPUT("%.*s", 4, "    ");
+	}
+	
 }
 static void header_gen_decl(FILE* file, int indent, Decl* decl);
 
@@ -889,7 +905,7 @@ static void header_gen_members(FILE* file, int indent, Decl** members)
 			scratch_buffer.str[scratch_buffer.len] = '\0';
 			printf("%.*s\n", scratch_buffer.len, &scratch_buffer.str[0]);
 			OUTPUT("%.*s", scratch_buffer.len, &scratch_buffer.str[0]); //scratch_buffer.len,
-			OUTPUT(";\n");
+			OUTPUT("%s", ";\n");
 			/*
 			if (is_obvious_type(member->type)) {
 				header_print_obvious_type(file, member->type);
@@ -926,7 +942,7 @@ static void header_gen_enum_members(FILE* file, int indent, Decl** members) {
 			scratch_buffer.str[scratch_buffer.len] = '\0';
 			printf("%.*s\n", scratch_buffer.len, &scratch_buffer.str[0]);
 			OUTPUT("%.*s", scratch_buffer.len, &scratch_buffer.str[0]); //scratch_buffer.len,
-			OUTPUT(";\n");
+			OUTPUT("%s", ";\n");
 			/*
 			if (is_obvious_type(member->type)) {
 				header_print_obvious_type(file, member->type);
@@ -966,11 +982,11 @@ static void header_gen_struct(FILE* file, int indent, Decl* decl)
 	}
 	else
 	{
-		OUTPUT("struct\n{\n");
+		OUTPUT("%s", "struct\n{\n");
 	}
 	header_gen_members(file, indent + 1, decl->strukt.members);
 	INDENT();
-	OUTPUT("};\n");
+	OUTPUT("%s", "};\n");
 }
 
 static void header_gen_union(FILE* file, int indent, Decl* decl)
@@ -978,7 +994,7 @@ static void header_gen_union(FILE* file, int indent, Decl* decl)
 	OUTPUT("typedef union %s__ %s;\n", decl->extname, decl->extname);
 	OUTPUT("union %s__\n{\n", decl->extname);
 	header_gen_members(file, indent, decl->strukt.members);
-	OUTPUT("};\n");
+	OUTPUT("%s", "};\n");
 }
 
 static void header_gen_enum(FILE* file, int indent, Decl* decl)
@@ -989,7 +1005,7 @@ static void header_gen_enum(FILE* file, int indent, Decl* decl)
 	//decl->enums
 	//decl->strukt
 	header_gen_enum_members(file, indent, decl->enums.values);
-	OUTPUT("};\n");
+	OUTPUT("%s", "};\n");
 }
 
 static void header_gen_err(FILE* file, int indent, Decl* decl)
@@ -997,7 +1013,7 @@ static void header_gen_err(FILE* file, int indent, Decl* decl)
 	OUTPUT("typedef struct %s_error__ %s_error;\n", decl->extname, decl->extname);
 	OUTPUT("struct %s_error__\n{\n", decl->extname);
 	header_gen_members(file, indent, decl->strukt.members);
-	OUTPUT("};\n");
+	OUTPUT("%s", "};\n");
 }
 
 static void header_gen_typedef(FILE* file, int indent, Decl* decl)
@@ -1036,7 +1052,7 @@ static void header_gen_typedef(FILE* file, int indent, Decl* decl)
 			}
 		}*/
 	if (decl->extname && decl->type) {
-		OUTPUT("typedef ");
+		OUTPUT("%s", "typedef ");
 		//header_print_type(file, decl->type);
 		//header_print_type(file, decl->typedef_decl.type_info->type);
 		//OUTPUT(" %s__;\n", decl->extname);
@@ -1054,7 +1070,7 @@ static void header_gen_typedef(FILE* file, int indent, Decl* decl)
 		scratch_buffer.str[scratch_buffer.len] = '\0';
 		printf("%.*s\n", scratch_buffer.len, &scratch_buffer.str[typedef_len]);
 		OUTPUT("%.*s", scratch_buffer.len, &scratch_buffer.str[typedef_len]); //scratch_buffer.len,
-		OUTPUT(";\n");
+		OUTPUT("%s", ";\n");
 
 
 		OUTPUT("typedef %s__ %s;\n", decl->extname, decl->extname);
@@ -1113,7 +1129,7 @@ RETRY:
 
 static void header_gen_var(FILE* file, SemaContext* c, Decl* decl)
 {
-	fprintf(file, "/* vars */\n");
+	fprintf(file, "%s", "/* vars */\n");
 }
 
 void header_gen(Module* module)
@@ -1130,13 +1146,13 @@ void header_gen(Module* module)
 	printf("writing header: %s\n", filename);
 
 	FILE* file = fopen(filename, "w");
-	OUTPUT("#include <stdint.h>\n");
-	OUTPUT("#ifndef __c3__\n");
-	OUTPUT("#define __c3__\n");
+	OUTPUT("%s", "#include <stdint.h>\n");
+	OUTPUT("%s", "#ifndef __c3__\n");
+	OUTPUT("%s", "#define __c3__\n");
 	//OUTPUT("typedef ");
 	//header_print_type(file, type_flatten(type_typeid));
 	//OUTPUT(" c3typeid_t;\n");
-	OUTPUT("#endif\n");
+	OUTPUT("%s", "#endif\n");
 
 	//prototype each before they're defined
 	// structs?
@@ -1338,6 +1354,7 @@ void c_emit_continue(FILE* file, void* context, int indent, Ast* ast) {
 
 void c_emit_local_decl(FILE* file, void* context, int indent, Decl* decl) {
 	printf(__FUNCDNAME__":%s", "\n");
+
 	if (decl->var.is_static)
 	{
 		INDENT();
@@ -1349,6 +1366,8 @@ void c_emit_local_decl(FILE* file, void* context, int indent, Decl* decl) {
 		if (IS_FAILABLE(decl))
 		{
 			OUTPUT("%s$f", decl->extname);
+		} else {
+			OUTPUT("%s", decl->extname);
 		}
 		return;
 	}
@@ -1360,22 +1379,52 @@ void c_emit_local_decl(FILE* file, void* context, int indent, Decl* decl) {
 
 	Expr* init = decl->var.init_expr;
 	if (init) {
-		c_emit_assign_expr(file, context, indent, NULL, decl->var.init_expr);
+		uint32_t type_named_start = scratch_buffer.len;
+		c_type_append_name_to_scratch(decl->type, decl->name);
+		uint32_t type_named_end = scratch_buffer.len;
+		OUTPUT("%.*s = {0}", (type_named_end - type_named_start), &scratch_buffer.str[type_named_start]);
+
+		scratch_buffer.len = type_named_start;
+		//TODO!
+		//c_emit_assign_expr(file, context, indent, NULL, decl->var.init_expr);
 	} else if (decl->var.no_init) {
-		
+		uint32_t type_named_start = scratch_buffer.len;
+		c_type_append_name_to_scratch(decl->type, decl->name);
+		uint32_t type_named_end = scratch_buffer.len;
+		OUTPUT("%.*s", (type_named_end - type_named_start), &scratch_buffer.str[type_named_start]);
+
+		scratch_buffer.len = type_named_start;
 	} else {
 		if (decl->var.failable_ref) {
 			
 		}
 		//zero initialize ? (in c this is = {0});
-		//Type* type = ;
-		uint32_t type_named_start = scratch_buffer.len;
-		c_type_append_name_to_scratch(decl->type, decl->name);
-		uint32_t type_named_end = scratch_buffer.len;
-		OUTPUT("%.*s = {0};", (type_named_end-type_named_start), &scratch_buffer.str[type_named_start]);
+		Type* type = type_lowering(decl->type);
+		if (type_is_builtin(type->type_kind) || type->type_kind == TYPE_POINTER) {
+			uint32_t type_named_start = scratch_buffer.len;
+			c_type_append_name_to_scratch(decl->type, decl->name);
+			uint32_t type_named_end = scratch_buffer.len;
+
+			uint32_t type_unnamed_start = scratch_buffer.len;
+			c_type_append_name_to_scratch(decl->type, "");
+			uint32_t type_unnamed_end = scratch_buffer.len;
+			//don't trust that NULL just exists for free, perform a cast
+			OUTPUT("%.*s = (%.*s)0", (type_named_end - type_named_start), &scratch_buffer.str[type_named_start],
+				(type_unnamed_end-type_unnamed_start),
+				&scratch_buffer.str[type_unnamed_start]);
+
+			scratch_buffer.len = type_named_start;
+		} else {
+			uint32_t type_named_start = scratch_buffer.len;
+			c_type_append_name_to_scratch(decl->type, decl->name);
+			uint32_t type_named_end = scratch_buffer.len;
+			OUTPUT("%.*s = {0}", (type_named_end - type_named_start), &scratch_buffer.str[type_named_start]);
+
+			scratch_buffer.len = type_named_start;
+		}
 	}
 
-	OUTPUT("%s", decl->extname);
+	//OUTPUT("%s", decl->extname);
 	//TODO;
 }
 
@@ -1522,19 +1571,21 @@ void c_emit_if(FILE* file, void* context, int indent, Ast* ast) {
 void c_emit_expr_stmt(FILE* file, void* context, int indent, Ast* ast) {
 	printf(__FUNCDNAME__":%s", "\n");
 	//struct BEValue value;
-	INDENT();
+	//INDENT();
 	if (IS_FAILABLE(ast->expr_stmt)) {
 		//emit_expr(c, &value, ast->expr_stmt);
 	}
 	c_emit_expr(file, context, indent, NULL, ast->expr_stmt);
-	OUTPUT(";\n");
+	OUTPUT("%s", ";\n");
 	//TODO;
 }
 
 void c_emit_statement_chain(FILE* file, void* context, int indent, AstId current) {
-	printf(__FUNCDNAME__":%s", "\n");
+	printf(__FUNCDNAME__": indent %d\n", indent);
+
 	while (current)
 	{
+		//INDENT();
 		c_emit_stmt(file, context, indent, ast_next(&current));
 		//llvm_emit_stmt(c, ast_next(&current));
 	}
@@ -1646,19 +1697,21 @@ const char* constkind_names[] = {
 	"CONST_STRING",
 	"CONST_POINTER",
 	"CONST_TYPEID",
-	"CONST_LIST"
+	"CONST_LIST",
+	"__ERROR__"
 };
 
 //llvm_emit_const_expr
 static void c_emit_const_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
 	ConstKind const_kind = expr->const_expr.const_kind;
-	printf(__FUNCDNAME__": [%d] %s\n", const_kind, constkind_names[const_kind]);
+	printf(__FUNCDNAME__": [%d] %s\n", const_kind, constkind_names[const_kind > CONST_LIST ? CONST_LIST+1 : const_kind]);
 	Type* type = type_lowering(expr->type)->canonical;
 
 	switch (const_kind) {
 	case CONST_FLOAT:
 		//expr->const_expr.fxx
 		//OUTPUT("%lf", expr->const_expr.fxx.f);
+		OUTPUT("%f", expr->const_expr.fxx.f);
 		break;
 	case CONST_INTEGER:
 		Int128 i = expr->const_expr.ixx.i;
@@ -1874,11 +1927,45 @@ static void c_emit_assign_expr(FILE* file, void* context, int ident, struct BEVa
 		
 	}
 
-
+	//c_emit_binary_expr(file, context, ident, value, expr);
 }
 
+const char* binaryop_names[] = {
+	"BINARYOP_ERROR",
+	"BINARYOP_MULT",
+	"BINARYOP_SUB",
+	"BINARYOP_ADD",
+	"BINARYOP_DIV",
+	"BINARYOP_MOD",
+	"BINARYOP_SHR",
+	"BINARYOP_SHL",
+	"BINARYOP_BIT_OR",
+	"BINARYOP_BIT_XOR",
+	"BINARYOP_BIT_AND",
+	"BINARYOP_AND",
+	"BINARYOP_OR",
+	"BINARYOP_OR_ERR",
+	"BINARYOP_GT",
+	"BINARYOP_GE",
+	"BINARYOP_LT",
+	"BINARYOP_LE",
+	"BINARYOP_NE",
+	"BINARYOP_EQ",
+	"BINARYOP_ASSIGN",
+	"BINARYOP_ADD_ASSIGN",
+	"BINARYOP_BIT_AND_ASSIGN",
+	"BINARYOP_BIT_OR_ASSIGN",
+	"BINARYOP_BIT_XOR_ASSIGN",
+	"BINARYOP_DIV_ASSIGN",
+	"BINARYOP_MOD_ASSIGN",
+	"BINARYOP_MULT_ASSIGN",
+	"BINARYOP_SHR_ASSIGN",
+	"BINARYOP_SHL_ASSIGN",
+	"BINARYOP_SUB_ASSIGN",
+	"__ERROR__"
+};
 static void c_emit_op(FILE* file, void* context, int ident, uint32_t op) {
-	printf(__FUNCDNAME__":%s", "\n");
+	printf(__FUNCDNAME__": [%d] %s\n", op, binaryop_names[op > BINARYOP_SUB_ASSIGN ? BINARYOP_SUB_ASSIGN + 1 : op]);
 
 	switch (op) {
 	case BINARYOP_MULT:
@@ -2017,43 +2104,9 @@ static void c_emit_ternary_expr(FILE* file, void* context, int indent, struct BE
 	c_emit_expr(file, context, indent, value, else_expr);
 }
 
-const char* binaryop_names[] = {
-	"BINARYOP_ERROR",
-	"BINARYOP_MULT",
-	"BINARYOP_SUB",
-	"BINARYOP_ADD",
-	"BINARYOP_DIV",
-	"BINARYOP_MOD",
-	"BINARYOP_SHR",
-	"BINARYOP_SHL",
-	"BINARYOP_BIT_OR",
-	"BINARYOP_BIT_XOR",
-	"BINARYOP_BIT_AND",
-	"BINARYOP_AND",
-	"BINARYOP_OR",
-	"BINARYOP_OR_ERR",
-	"BINARYOP_GT",
-	"BINARYOP_GE",
-	"BINARYOP_LT",
-	"BINARYOP_LE",
-	"BINARYOP_NE",
-	"BINARYOP_EQ",
-	"BINARYOP_ASSIGN",
-	"BINARYOP_ADD_ASSIGN",
-	"BINARYOP_BIT_AND_ASSIGN",
-	"BINARYOP_BIT_OR_ASSIGN",
-	"BINARYOP_BIT_XOR_ASSIGN",
-	"BINARYOP_DIV_ASSIGN",
-	"BINARYOP_MOD_ASSIGN",
-	"BINARYOP_MULT_ASSIGN",
-	"BINARYOP_SHR_ASSIGN",
-	"BINARYOP_SHL_ASSIGN",
-	"BINARYOP_SUB_ASSIGN"
-};
-
 static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
 	BinaryOp binary_op = expr->binary_expr.operator;
-	printf(__FUNCDNAME__": [%d] %s\n", binary_op, binaryop_names[binary_op]);
+	printf(__FUNCDNAME__": [%d] %s\n", binary_op, binaryop_names[binary_op > BINARYOP_SUB_ASSIGN ? BINARYOP_SUB_ASSIGN+1 : binary_op]);
 	/*
 	if (binary_op >= BINARYOP_ASSIGN && expr_is_vector_index(exprptr(expr->binary_expr.left)))
 	{
@@ -2062,15 +2115,18 @@ static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEV
 		return;
 	}
 	*/
+	Expr* left = exprptr(expr->binary_expr.left);
+	Expr* right = exprptr(expr->binary_expr.right);
+
 	if (binary_op > BINARYOP_ASSIGN)
 	{
 		BinaryOp base_op = binaryop_assign_base_op(binary_op);
 		assert(base_op != BINARYOP_ERROR);
-		c_emit_expr(file, context, indent, NULL, exprptr(expr->binary_expr.left));
+		c_emit_expr(file, context, indent, NULL, left);
 		OUTPUT("%s", " ");
 		c_emit_op(file, context, indent, binary_op);
 		OUTPUT("%s", " ");
-		c_emit_expr(file, context, indent, NULL, exprptr(expr->binary_expr.right));
+		c_emit_expr(file, context, indent, NULL, right);
 		/*
 		switch () {
 		}
@@ -2087,8 +2143,6 @@ static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEV
 	}
 	if (binary_op == BINARYOP_ASSIGN)
 	{
-		Expr* left = exprptr(expr->binary_expr.left);
-		Expr* right = exprptr(expr->binary_expr.right);
 		c_emit_expr(file, context, indent, NULL, left);
 		/*
 		if (left->expr_kind == EXPR_IDENTIFIER) {
@@ -2113,13 +2167,16 @@ static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEV
 		* */
 		return;
 	}
-
+	if (binary_op == BINARYOP_ERROR) {
+		printf("can't do anything with a binary_op error\n");
+		return;
+	}
 	// everything else
-	c_emit_expr(file, context, indent, NULL, exprptr(expr->binary_expr.left));
+	c_emit_expr(file, context, indent, NULL, left);
 	OUTPUT("%s", " ");
 	c_emit_op(file, context, indent, binary_op);
 	OUTPUT("%s", " ");
-	c_emit_expr(file, context, indent, NULL, exprptr(expr->binary_expr.right));
+	c_emit_expr(file, context, indent, NULL, right);
 
 
 }
@@ -2254,10 +2311,12 @@ const char* expr_kind_names[] = {
 	"EXPR_NOP",
 	"EXPR_TYPEID_INFO",
 	"EXPR_VARIANT",
-	"EXPR_BUILTIN_ACCESS"
+	"EXPR_BUILTIN_ACCESS",
+	"__ERROR_EXPR__"
 };
 
 void c_emit_cast_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
+	printf(__FUNCDNAME__":%c", '\n');
 	//expr->type (to type)
 	//exprtype(expr->cast_expr.expr) (from type)
 	uint32_t to_type_start = scratch_buffer.len;
@@ -2267,9 +2326,33 @@ void c_emit_cast_expr(FILE* file, void* context, int indent, struct BEValue* val
 
 	c_emit_expr(file, context, indent, value, exprptr(expr->cast_expr.expr));
 }
+//comma expression?
+void c_emit_expression_list_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
+	
+	//VECEACH(expr->expression_list, i)
+	unsigned exprs_count = vec_size(expr->expression_list);
+	if (exprs_count) {
+		c_emit_expr(file, context, indent, value, expr->expression_list[0]);
+	}
+
+	for (unsigned i = 1; i < exprs_count; i++)
+	{
+		OUTPUT("%s", ", ");
+		c_emit_expr(file, context, indent, value, expr->expression_list[i]);
+	}
+}
+//llvm_emit_post_unary_expr
+//
+//expr->unary_expr.operator == UNARYOP_INC
+void c_emit_post_unary_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
+	//expr->unary_expr.operator
+	c_emit_expr(file, context, indent, value, expr->unary_expr.expr);
+	OUTPUT("%.*s", 2, expr->unary_expr.operator == UNARYOP_INC ? "++" : "--");
+	//c_emit_op(file, context, indent, expr->unary_expr.operator);
+}
 
 void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
-	printf(__FUNCDNAME__": [%i] %s\n", expr->expr_kind, expr_kind_names[expr->expr_kind]);
+	printf(__FUNCDNAME__": [%i] %s\n", expr->expr_kind, expr_kind_names[expr->expr_kind > EXPR_BUILTIN_ACCESS ? EXPR_BUILTIN_ACCESS+1 : expr->expr_kind]);
 
 	switch (expr->expr_kind)
 	{
@@ -2372,7 +2455,7 @@ void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, E
 		return;
 	case EXPR_POST_UNARY:
 		//llvm_emit_post_unary_expr(c, value, expr);
-		//c_emit_post_unary_expr()
+		c_emit_post_unary_expr(file, context, indent, value, expr);
 		return;
 	case EXPR_FORCE_UNWRAP:
 		//llvm_emit_force_unwrap_expr(c, value, expr);
@@ -2407,6 +2490,7 @@ void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, E
 		return;
 	case EXPR_EXPRESSION_LIST:
 		//gencontext_emit_expression_list_expr(c, value, expr);
+		c_emit_expression_list_expr(file, context, indent, value, expr);
 		return;
 	case EXPR_CAST:
 		//gencontext_emit_cast_expr(c, value, expr);
@@ -2421,6 +2505,7 @@ void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, E
 
 //void llvm_emit_for_stmt(GenContext *c, Ast *ast)
 void c_emit_for(FILE* file, void* context, int indent, Ast* ast) {
+	printf(__FUNCDNAME__":%c", '\n');
 	INDENT();
 
 	ExprId init = ast->for_stmt.init;
@@ -2456,12 +2541,12 @@ void c_emit_for(FILE* file, void* context, int indent, Ast* ast) {
 		INDENT();
 		OUTPUT("%s", "} while (");
 		c_emit_expr(file, context, indent, NULL, cond ? exprptr(cond) : NULL);
-		OUTPUT(");\n");
+		OUTPUT("%s", ");\n");
 	}
 	else {
 		//struct BEValue dummy = { 0 };
 
-		OUTPUT("%s" "for (");
+		OUTPUT("%s", "for (");
 		if (init)
 			c_emit_expr(file, context, indent, NULL, init ? exprptr(init) : NULL);
 		OUTPUT("%s", ";");
@@ -2470,9 +2555,9 @@ void c_emit_for(FILE* file, void* context, int indent, Ast* ast) {
 		OUTPUT("%s", ";");
 		if (incr)
 			c_emit_expr(file, context, indent, NULL, incr ? exprptr(incr) : NULL);
-		OUTPUT("%s", ")");
-
+		OUTPUT("%s", ") {\n");
 		c_emit_stmt(file, context, indent, body);
+		OUTPUT("%s", "}\n");
 	}
 
 
@@ -2480,7 +2565,7 @@ void c_emit_for(FILE* file, void* context, int indent, Ast* ast) {
 
 void c_emit_block_exit_return(FILE* file, void* context, int indent, Ast* ast)
 {
-
+	printf(__FUNCDNAME__":%c", '\n');
 	//PUSH_ERROR();
 	//LLVMBasicBlockRef error_return_block = NULL;
 	//LLVMValueRef error_out = NULL;
@@ -2558,11 +2643,16 @@ static const char* ast_kind_names[] = {
 	"AST_BLOCK_EXIT_STMT",
 	"AST_SWITCH_STMT",
 	"AST_NEXT_STMT",
-	"AST_DOC_STMT"
+	"AST_DOC_STMT",
+	"__ERROR__"
 };
 
 void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
-	printf("c_emit_stmt: [%d] %s\n", ast->ast_kind, ast_kind_names[ast->ast_kind]);
+	printf("c_emit_stmt: [%d] %s\n", ast->ast_kind, ast_kind_names[ast->ast_kind > AST_DOC_STMT ? AST_DOC_STMT+1 : ast->ast_kind]);
+	
+	//if (ast->ast_kind != AST_EXPR_STMT)
+	//	INDENT();
+
 	switch (ast->ast_kind)
 	{
 	case AST_POISONED:
@@ -2573,13 +2663,14 @@ void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
 	case AST_EXPR_STMT:
 		//gencontext_emit_expr_stmt(c, ast);
 		c_emit_expr_stmt(file, context, indent, ast);
-		break;
+		return; //outputs it's own newline
 	case AST_DECLARE_STMT:
 	{
 		//BEValue value;
 		//llvm_emit_local_decl(c, ast->declare_stmt, &value);
 		c_emit_local_decl(file, context, indent, ast->declare_stmt);
-		break;
+		OUTPUT("%s", ";\n");
+		return;
 	}
 	case AST_BREAK_STMT:
 		c_emit_break(file, context, indent, ast);
@@ -2609,6 +2700,7 @@ void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
 		//llvm_emit_for_stmt(c, ast);
 		break;
 	case AST_NEXT_STMT:
+		TODO;
 		//gencontext_emit_next_stmt(c, ast);
 		break;
 	case AST_DEFER_STMT:
@@ -2616,8 +2708,10 @@ void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
 		break;
 	case AST_ASM_STMT:
 		//llvm_emit_asm_stmt(c, ast);
+		TODO;
 		break;
 	case AST_ASSERT_STMT:
+		TODO;
 		//llvm_emit_assert_stmt(c, ast);
 		break;
 	case AST_CT_ASSERT:
@@ -2634,6 +2728,7 @@ void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
 		break;
 	}
 
+	OUTPUT("%s", "\n");
 }
 
 void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl) {
@@ -2641,7 +2736,10 @@ void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl) {
 
 	// output the function signature
 	printf("c_emit_function_body: %s\n", decl->name);
+
+	INDENT();
 	OUTPUT("/* function: %s */\n", decl->name);
+	INDENT();
 
 	FunctionPrototype* prototype = decl->type->func.prototype;
 
@@ -2717,11 +2815,19 @@ void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl) {
 	// output the function
 	OUTPUT("%s", "{\n");
 	AstId current = astptr(decl->func_decl.body)->compound_stmt.first_stmt;
+
+	//int new_indent = indent+1;
+	//indent += 1;
+	//c_emit_statement_chain(file, context, indent + 1, current);
+	//indent += 1;
+
 	while (current)
 	{
 		//llvm_emit_stmt(c, ast_next(&current));
+		//INDENT();
 		c_emit_stmt(file, context, indent, ast_next(&current));
 	}
+	
 	OUTPUT("%s", "}\n");
 
 }
