@@ -2234,7 +2234,7 @@ void c_emit_subscript(FILE* file, void* context, int indent, struct BEValue* val
 	bool is_value = expr->expr_kind == EXPR_SUBSCRIPT;
 	Expr* parent_expr = exprptr(expr->subscript_expr.expr);
 	Expr* index_expr = exprptr(expr->subscript_expr.index);
-	/*
+	
 	Type* parent_type = type_lowering(parent_expr->type);
 	TypeKind parent_type_kind = parent_type->type_kind;
 
@@ -2245,11 +2245,11 @@ void c_emit_subscript(FILE* file, void* context, int indent, struct BEValue* val
 		TODO;
 		return;
 	}
-	*/
+	
 	c_emit_expr(file, context, indent, value, parent_expr);
 	//c_emit_len_for_expr();
 	//llvm_emit_len_for_expr();
-	/*
+	
 	bool needs_len = false;
 	if (parent_type_kind == TYPE_SUBARRAY)
 	{
@@ -2264,8 +2264,23 @@ void c_emit_subscript(FILE* file, void* context, int indent, struct BEValue* val
 
 	if (needs_len) {
 		//c_emit_len_for_expr();
+		c_emit_expr(file, context, indent, value, index_expr);
 	}
-	*/
+}
+
+void c_emit_access_addr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
+	Expr* parent = expr->access_expr.parent;
+	//c_emit_expr(file, context, indent, value, expr);
+	Decl* member = expr->access_expr.ref;
+
+	Type* flat_type = type_flatten_distinct_failable(parent->type);
+	if (flat_type->type_kind == TYPE_ENUM)
+	{
+		c_emit_expr(file, context, indent, value, parent);
+		return;
+	}
+
+	c_emit_expr(file, context, indent, value, parent);
 }
 
 const char* expr_kind_names[] = {
@@ -2359,6 +2374,153 @@ void c_emit_post_unary_expr(FILE* file, void* context, int indent, struct BEValu
 	c_emit_expr(file, context, indent, value, expr->unary_expr.expr);
 	OUTPUT("%.*s", 2, expr->unary_expr.operator == UNARYOP_INC ? "++" : "--");
 	//c_emit_op(file, context, indent, expr->unary_expr.operator);
+}
+
+void c_emit_call_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
+	if (expr->call_expr.is_builtin) {
+		//c_emit_bulitin_call(file, context, indent, value, expr);
+		return;
+	}
+	/*
+	if (c->debug.stack_slot_row) {
+		llvm_store(c, c->debug.stack_slot_row, llvm_const_int(c, type_uint, expr->span.row), type_abi_alignment(type_uint));
+	}
+	*/
+
+	bool always_inline = false;
+	FunctionPrototype* prototype;
+
+	// 1. Call through a pointer
+	if (!expr->call_expr.is_func_ref) {
+		Expr* function = exprptr(expr->call_expr.function);
+
+		// 1a. Find the pointee type for the function pointer:
+		Type* type = function->type->canonical->pointer;
+
+		// 1b. Find the type signature using the underlying pointer.
+		prototype = type->func.prototype;
+		//BEValue func_value;
+		c_emit_expr(file, context, indent, NULL, function);
+		/*
+		// 1d. Load it as a value
+		func = llvm_load_value_store(c, &func_value);
+
+		// 1e. Calculate the function type
+		func_type = llvm_get_type(c, type);
+		*/
+	} else {
+		Decl* function_decl = declptr(expr->call_expr.func_ref);
+		always_inline = function_decl->func_decl.attr_inline;
+
+		// 2b. Set signature, function and function type
+		prototype = function_decl->type->func.prototype;
+		OUTPUT("%s", (function_decl->extname && *function_decl->extname) ? function_decl->extname : function_decl->name);
+		/*
+		func = llvm_get_ref(c, function_decl);
+		assert(func);
+		func_type = llvm_get_type(c, function_decl->type);
+		*/
+	}
+
+	//LLVMValueRef *values = NULL;
+	Type** params = prototype->params;
+	ABIArgInfo** abi_args = prototype->abi_args;
+	unsigned param_count = vec_size(params);
+	unsigned non_variadic_params = param_count;
+	Expr** args = expr->call_expr.arguments;
+	unsigned arguments = vec_size(args);
+
+	if (prototype->variadic == VARIADIC_TYPED || prototype->variadic == VARIADIC_ANY)
+		non_variadic_params--;
+
+	FunctionPrototype copy;
+	if (prototype->variadic == VARIADIC_RAW) {
+		if (arguments > non_variadic_params)
+		{
+			copy = *prototype;
+			copy.varargs = NULL;
+			for (unsigned i = non_variadic_params; i < arguments; i++)
+			{
+				vec_add(copy.varargs, type_flatten(args[i]->type));
+			}
+			copy.ret_abi_info = NULL;
+			copy.ret_by_ref_abi_info = NULL;
+			copy.abi_args = NULL;
+			c_abi_func_create(&copy);
+			prototype = &copy;
+			/*
+			LLVMTypeRef *params_type = NULL;
+			llvm_update_prototype_abi(c, prototype, &params_type);
+			*/
+		}
+	}
+
+	ABIArgInfo* ret_info = prototype->ret_abi_info;
+	Type* call_return_type = prototype->abi_ret_type;
+
+	// 5. In the case of a failable, the error is replacing the regular return abi.
+
+	// 6. Generate data for the return value.
+	switch (ret_info->kind)
+	{
+	default:
+		break;
+	}
+
+	// 7. We might have a failable indirect return and a normal return.
+	//    In this case we need to add it by hand.
+
+	//BEValue synthetic_return_param = { 0 };
+	if (prototype->ret_by_ref)
+	{
+		// 7b. Create the address to hold the return.
+		Type* actual_return_type = type_lowering(prototype->ret_by_ref_type);
+		/*
+		llvm_value_set(&synthetic_return_param, llvm_emit_alloca_aligned(c, actual_return_type, "retparam"), type_get_ptr(actual_return_type));
+		// 7c. Emit it as a parameter as a pointer (will implicitly add it to the value list)
+		llvm_emit_parameter(c, &values, prototype->ret_by_ref_abi_info, &synthetic_return_param, synthetic_return_param.type);
+		// 7d. Update the be_value to actually be an address.
+		llvm_value_set_address_abi_aligned(&synthetic_return_param, synthetic_return_param.value, actual_return_type);
+		*/
+	}
+
+	OUTPUT("%s", "(");
+	// 8. Add all other arguments.
+	assert(arguments >= non_variadic_params);
+	if (non_variadic_params) {
+		Expr* arg_expr = args[0];
+		c_emit_expr(file, context, indent, NULL, arg_expr);
+	}
+	for (unsigned i = 1; i < non_variadic_params; i++) {
+		// 8a. Evaluate the expression.
+		Expr* arg_expr = args[i];
+		OUTPUT("%s", ", ");
+		c_emit_expr(file, context, indent, NULL, arg_expr);
+
+		// 8b. Emit the parameter according to ABI rules.
+		/*
+		Type *param = params[i];
+		ABIArgInfo *info = abi_args[i];
+		llvm_emit_parameter(c, &values, info, &temp_value, param);
+		*/
+	}
+
+	// 9. Typed varargs
+	if (prototype->variadic == VARIADIC_TYPED || prototype->variadic == VARIADIC_ANY)
+	{
+		//TODO;
+
+		// 9. Emit varargs.
+		for (unsigned i = param_count; i < arguments; i++)
+		{
+			Expr* arg_expr = args[i];
+			OUTPUT("%s", ", ");
+			c_emit_expr(file, context, indent, NULL, arg_expr);
+			//REMINDER("Varargs should be expanded correctly");
+			//vec_add(values, llvm_load_value_store(c, &temp_value));
+		}
+	}
+	OUTPUT("%s", ")");
 }
 
 void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
@@ -2494,9 +2656,13 @@ void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, E
 	case EXPR_ACCESS:
 
 		//gencontext_emit_access_addr(c, value, expr);
+		c_emit_access_addr(file, context, indent, value, expr);
+		//TODO;
 		return;
 	case EXPR_CALL:
 		//llvm_emit_call_expr(c, value, expr);
+		//TODO;
+		c_emit_call_expr(file, context, indent, value, expr);
 		return;
 	case EXPR_EXPRESSION_LIST:
 		//gencontext_emit_expression_list_expr(c, value, expr);
