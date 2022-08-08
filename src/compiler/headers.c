@@ -1376,6 +1376,7 @@ void c_emit_local_decl(FILE* file, void* context, int indent, Decl* decl) {
 		OUTPUT("%s.f", decl->extname);
 		return;
 	}
+	uint32_t scratch_len = scratch_buffer.len;
 
 	Expr* init = decl->var.init_expr;
 	if (init) {
@@ -1426,7 +1427,7 @@ void c_emit_local_decl(FILE* file, void* context, int indent, Decl* decl) {
 			scratch_buffer.len = type_named_start;
 		}
 	}
-
+	scratch_buffer.len = scratch_len;
 	//OUTPUT("%s", decl->extname);
 	//TODO;
 }
@@ -1443,6 +1444,7 @@ void c_emit_switch_body(FILE* file, void* context, int indent, Ast* switch_ast, 
 		return;
 	}
 
+	uint32_t scratch_len = scratch_buffer.len;
 	if (is_if_chain) {
 		Ast* default_case = NULL; //default case becomes "else"
 		int is_first_case = 1;
@@ -1527,6 +1529,8 @@ void c_emit_switch_body(FILE* file, void* context, int indent, Ast* switch_ast, 
 			is_first_case = 0;
 		}
 	}
+
+	scratch_buffer.len = scratch_len;
 }
 
 //llvm_emit_if
@@ -2228,28 +2232,86 @@ void c_emit_len_for_expr(File* file, void* context, int indent, struct BEValue* 
 }
 #endif
 
+void c_emit_vector_subscript(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
+	/*
+	llvm_emit_exprid(c, value, expr->subscript_expr.expr);
+	llvm_value_rvalue(c, value);
+	Type* vec = value->type;
+	assert(vec->type_kind == TYPE_VECTOR);
+	Type* element = vec->array.base;
+	LLVMValueRef vector = value->value;
+	llvm_emit_exprid(c, value, expr->subscript_expr.index);
+	llvm_value_rvalue(c, value);
+	LLVMValueRef index = value->value;
+	if (expr->subscript_expr.from_back)
+	{
+		index = LLVMBuildNUWSub(c->builder, llvm_const_int(c, value->type, vec->array.len), index, "");
+	}
+	llvm_value_set(value, LLVMBuildExtractElement(c->builder, vector, index, ""), element);
+	*/
+	c_emit_expr(file, context, indent, value, exprptr(expr->subscript_expr.expr));
+	//c_value_rvalue();
+	OUTPUT("%s", "[");
+	c_emit_expr(file, context, indent, value, exprptr(expr->subscript_expr.index));
+	OUTPUT("%s", "]");
+	//TODO;
+}
+
+void c_emit_len_for_expr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr_to_len) {
+	switch (expr_to_len->type->type_kind) {
+	case TYPE_SUBARRAY:
+		/*
+		llvm_value_fold_failable(c, be_value);
+		if (expr_to_len->kind == BE_VALUE)
+		{
+			llvm_value_set(be_value, llvm_emit_extract_value(c, expr_to_len->value, 1), type_usize);
+		}
+		else
+		{
+			LLVMTypeRef subarray_type = llvm_get_type(c, expr_to_len->type);
+			AlignSize alignment;
+			LLVMValueRef len_addr = llvm_emit_struct_gep_raw(c,
+				expr_to_len->value,
+				subarray_type,
+				1,
+				expr_to_len->alignment,
+				&alignment);
+			llvm_value_set_address(be_value, len_addr, type_usize, alignment);
+		}
+		*/
+		break;
+	case TYPE_ARRAY:
+	case TYPE_VECTOR:
+		//if the type isn't already uint64_t cast to size_t?
+		OUTPUT("%s%i", expr_to_len->type->type_kind == TYPE_U64 ? "" : "(size_t)", expr_to_len->type->array.len);
+		break;
+	}
+}
+
 void c_emit_subscript(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
 	printf(__FUNCDNAME__":%s", "\n");
 
 	bool is_value = expr->expr_kind == EXPR_SUBSCRIPT;
 	Expr* parent_expr = exprptr(expr->subscript_expr.expr);
 	Expr* index_expr = exprptr(expr->subscript_expr.index);
-	
 	Type* parent_type = type_lowering(parent_expr->type);
+
 	TypeKind parent_type_kind = parent_type->type_kind;
 
 	if (is_value && parent_type->type_kind == TYPE_VECTOR)
 	{
 		//llvm_emit_vector_subscript(c, value, expr);
-		//c_emit_vector_subscript();
-		TODO;
+		c_emit_vector_subscript(file, context, indent, value, expr);
 		return;
 	}
-	
+
+	// First, get thing being subscripted.
 	c_emit_expr(file, context, indent, value, parent_expr);
+
+
 	//c_emit_len_for_expr();
 	//llvm_emit_len_for_expr();
-	
+	//
 	bool needs_len = false;
 	if (parent_type_kind == TYPE_SUBARRAY)
 	{
@@ -2262,11 +2324,91 @@ void c_emit_subscript(FILE* file, void* context, int indent, struct BEValue* val
 		needs_len = (active_target.feature.safe_mode && expr->expr_kind != EXPR_CONST) || expr->subscript_expr.from_back;
 	}
 
-	if (needs_len) {
-		//c_emit_len_for_expr();
-		c_emit_expr(file, context, indent, value, index_expr);
+	//if (needs_len) {
+		//llvm_emit_subscript
+		//c_emit_len_for_expr(file, context, indent, value, index_expr);
+		//c_emit_expr(file, context, indent, value, index_expr);
+	//}
+	if (expr->subscript_expr.from_back) {
+		assert(needs_len);
 	}
+
+	if (needs_len && active_target.feature.safe_mode) {
+		//c_emit_array_bounds_check(file, context, indent, index, len.value, index_expr->span);
+	}
+
+	//OUTPUT("%s", "[");
+	//OUTPUT("%s", "]");
+
+	//llvm_emit_array_bounds_check
+	//llvm_emit_subscript_addr_with_base
+	//c_emit_subscript_addr_with_base(file, context, indent, NULL, NULL, NULL, );
+
+	switch (parent_type->type_kind) {
+	case TYPE_POINTER:
+		OUTPUT("%s", "[");
+		c_emit_expr(file, context, indent, value, index_expr);
+		OUTPUT("%s", "]");
+		return;
+	case TYPE_FLEXIBLE_ARRAY:
+		OUTPUT("%s", "[");
+		c_emit_expr(file, context, indent, value, index_expr);
+		OUTPUT("%s", "]");
+		return;
+	case TYPE_VECTOR:
+		UNREACHABLE
+	case TYPE_ARRAY:
+		{
+			OUTPUT("%s", "[");
+			c_emit_expr(file, context, indent, value, index_expr);
+			OUTPUT("%s", "]");
+		}
+		return;
+	case TYPE_SUBARRAY:
+	{
+		OUTPUT("%s", "[");
+		c_emit_expr(file, context, indent, value, index_expr);
+		OUTPUT("%s", "]");
+	}
+	return;
+	default:
+		UNREACHABLE
+	}
+
 }
+#if 0
+void c_emit_member_addr(FILE* file, void* context, int indent, struct BEValue* value, Decl *parent, Decl *member) {
+	assert(member->resolve_status == RESOLVE_DONE);
+
+	Decl* found = NULL;
+	do {
+		MemberIndex index = find_member_index(parent, member);
+		assert(index > -1);
+		found = parent->strukt.members[index];
+
+		switch (parent->type->canonical->type_kind)
+		{
+		case TYPE_UNION:
+			/*
+			llvm_value_addr(c, value);
+			llvm_value_set_address(value,
+				llvm_emit_bitcast(c, value->value, type_get_ptr(found->type)),
+				found->type,
+				value->alignment);
+				*/
+			break;
+		case TYPE_STRUCT:
+			/*
+			llvm_value_struct_gep(c, value, value, (unsigned)index);
+			*/
+			break;
+		default:
+			UNREACHABLE
+		}
+
+	} while (found != member);
+}
+#endif
 
 void c_emit_access_addr(FILE* file, void* context, int indent, struct BEValue* value, Expr* expr) {
 	Expr* parent = expr->access_expr.parent;
@@ -2276,11 +2418,17 @@ void c_emit_access_addr(FILE* file, void* context, int indent, struct BEValue* v
 	Type* flat_type = type_flatten_distinct_failable(parent->type);
 	if (flat_type->type_kind == TYPE_ENUM)
 	{
-		c_emit_expr(file, context, indent, value, parent);
+		//get the enum?
+		//c_emit_expr(file, context, indent, value, parent);
+		TODO;
 		return;
 	}
 
 	c_emit_expr(file, context, indent, value, parent);
+	OUTPUT(".%s", (member->extname && *member->extname) ? member->extname : member->name);
+	
+	//c_emit_member_addr(file, context, indent, value, type_lowering(parent->type)->decl, member);
+	//c_emit_access_addr(file, context, indent, )
 }
 
 const char* expr_kind_names[] = {
@@ -2348,6 +2496,8 @@ void c_emit_cast_expr(FILE* file, void* context, int indent, struct BEValue* val
 	c_type_append_name_to_scratch(expr->type, "");
 	uint32_t to_type_end = scratch_buffer.len;
 	OUTPUT("(%.*s)", (to_type_end-to_type_start), &scratch_buffer.str[to_type_start]);
+
+	scratch_buffer.len = to_type_start;
 
 	c_emit_expr(file, context, indent, value, exprptr(expr->cast_expr.expr));
 }
@@ -2601,7 +2751,7 @@ void c_emit_expr(FILE* file, void* context, int indent, struct BEValue* value, E
 		return;
 	case EXPR_EXPR_BLOCK:
 		//llvm_emit_expr_block(c, value, expr);
-
+		TODO;
 		return;
 	case EXPR_UNARY:
 		c_emit_unary_expr(file, context, indent, value, expr);
