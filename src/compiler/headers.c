@@ -572,8 +572,7 @@ RETRY:
 	{
 	case CT_TYPES:
 		UNREACHABLE
-	case TYPE_BITSTRUCT:
-		TODO
+		//TODO
 			//case TYPE_FAILABLE:
 			//case TYPE_FAILABLE_ANY:
 				// If this is reachable then we are not doing the proper lowering.
@@ -585,6 +584,7 @@ RETRY:
 	case TYPE_FAULTTYPE:
 		TODO;
 		break;
+	case TYPE_BITSTRUCT: //represents bitfields
 	case TYPE_STRUCT:
 		scratch_buffer_append_len("struct ", 7);
 		if (type->decl->extname && *type->decl->extname)
@@ -929,6 +929,13 @@ static void header_gen_members(FILE* file, int indent, Decl** members)
 			//c_type_append_name_to_scratch(member->type, member->name);
 			header_gen_union(file, indent, member->type->decl);
 
+		} else if (member->decl_kind == DECL_STRUCT) {
+			printf("adding struct member: %s\n", member->name);
+			//INDENT();
+			//header_print_named_type(file, member->type, member->name);
+			//scratch_buffer_clear();
+			//c_type_append_name_to_scratch(member->type, member->name);
+			header_gen_union(file, indent, member->type->decl);
 		} else {
 			INDENT();
 			OUTPUT("/* a member named [%s] : type[%i] */\n", member->name, member->decl_kind);
@@ -1140,7 +1147,8 @@ RETRY:
 		//header_gen_function(file, indent, decl);
 		return;
 	case DECL_BITSTRUCT:
-		TODO
+		//TODO
+		return;
 	case DECL_TYPEDEF:
 		header_gen_typedef(file, indent, decl);
 		return;
@@ -1162,6 +1170,119 @@ RETRY:
 	}
 	UNREACHABLE
 }
+/*
+struct slice_decl_vheader_ {
+	uint32_t size;
+	uint32_t capacity;
+	char *data; //vheader ends
+	Decl *members[2];
+};
+*/
+static void header_gen_subarray_decl_from_type(FILE* file, int indent, Type* slice_ty) {
+	Type fake_ptr = { 0 };
+	fake_ptr.type_kind = TYPE_POINTER;
+	fake_ptr.pointer = slice_ty;
+
+	uint32_t c_typename_start = scratch_buffer.len;
+	c_type_append_name_to_scratch(slice_ty, "");
+	uint32_t c_typename_end = scratch_buffer.len;
+
+	uint32_t c_base62_start = scratch_buffer.len;
+	struct encode_result e = base62_5_encode(&scratch_buffer.str[c_typename_end], (0xffff - scratch_buffer.len),
+		&scratch_buffer.str[c_typename_start], (c_typename_end - c_typename_start), base62_alphabet_extended);
+	scratch_buffer.len += e.written_chars;
+
+	if (!indent) {
+		OUTPUT("typedef struct __subarray_%.*s __subarray_%.*s;\n", (uint32_t)e.written_chars, &scratch_buffer.str[c_base62_start], (uint32_t)e.written_chars, &scratch_buffer.str[c_base62_start]);
+	}
+	printf("generating subarray: %.*s\n", (uint32_t)e.written_chars, &scratch_buffer.str[c_base62_start]);
+	INDENT();
+
+	OUTPUT("struct __subarray_%.*s {\n", (uint32_t)e.written_chars, &scratch_buffer.str[c_base62_start]);
+
+	uint32_t c_ptr_start = scratch_buffer.len;
+	c_type_append_name_to_scratch(&fake_ptr, "ptr");
+	uint32_t c_ptr_end = scratch_buffer.len;
+
+	indent += 1;
+	INDENT();
+	OUTPUT("%.*s;\n", (c_ptr_end-c_ptr_start), &scratch_buffer.str[c_ptr_start]);
+
+	scratch_buffer.len = c_ptr_start;
+
+	uint32_t c_len_start = scratch_buffer.len;
+	c_type_append_name_to_scratch(type_usize, "len");
+	uint32_t c_len_end = scratch_buffer.len;
+
+	INDENT();
+	OUTPUT("%.*s;\n", (c_len_end - c_len_start), &scratch_buffer.str[c_len_start]);
+	scratch_buffer.len = c_len_start;
+	//header_gen_members(file, indent + 1, decl->strukt.members);
+
+	indent -= 1;
+	INDENT();
+	OUTPUT("%s", "};\n");
+	/*
+	Decl subarray_struct = { 0 };
+
+	Type fake_slice = { 0 };
+	fake_slice.type_kind = TYPE_SUBARRAY;
+	fake_slice.array.base = ty_to_make_ptr;
+
+	Type fake_ptr = { 0 };
+	fake_ptr.type_kind = TYPE_POINTER;
+	fake_ptr.pointer = ty_to_make_ptr;
+
+	Decl members[2] = { 0 };
+	struct slice_decl_vheader_ v = { 0 };
+	v.capacity = 2;
+	v.size = 2;
+
+	members[0].name = "ptr";
+	members[0].decl_kind = DECL_VAR;
+	members[0].type = &fake_ptr;
+
+	members[1].name = "len";
+	members[1].decl_kind = DECL_VAR;
+	members[1].type = type_usize;
+
+	v.members[0] = &members[0];
+	v.members[1] = &members[1];
+
+	subarray_struct.decl_kind = DECL_STRUCT;
+	subarray_struct.strukt.members = &v.members;
+
+	uint32_t name_start = scratch_buffer.len;
+	c_type_append_name_to_scratch(&fake_slice, "");
+	uint32_t name_end = scratch_buffer.len;
+	scratch_buffer_append_char('\0');
+
+	header_gen_decl(file, indent, &subarray_struct);
+
+	//decls.data = &(members);
+	//decls.data = (char*)&members;
+
+	//vec_new_(sizeof(Decl), 2);
+	//subarray_struct.strukt.members = ;
+	*/
+	/*
+	Type fake_ptr;
+	fake_ptr.type_kind = TYPE_POINTER;
+	fake_ptr.pointer = ty_to_make_ptr;
+
+	Type fake_subarray;
+	fake_subarray.type_kind = TYPE_SUBARRAY;
+	fake_subarray.array.base = ty_to_make_ptr;
+
+
+	uint32_t struct_name = ;
+	c_type_append_name_to_scratch(&fake_ptr, "");
+
+	if (!indent) {
+		OUTPUT("typedef struct %s__ %s;\n", decl->extname, decl->extname);
+	}
+	*/
+}
 
 static void header_gen_var(FILE* file, SemaContext* c, Decl* decl)
 {
@@ -1173,11 +1294,11 @@ void header_gen(Module* module)
 	if (!vec_size(module->units))
 		return;
 	//TODO
-	CompilationUnit* unit = module->units[0];
-	const char* filename = str_cat(unit->file->name, ".h");
+	CompilationUnit* first_unit = module->units[0];
+	const char* filename = str_cat(first_unit->file->name, ".h");
 
 	SemaContext ctx;
-	sema_context_init(&ctx, unit);
+	sema_context_init(&ctx, first_unit);
 
 	printf("writing header: %s\n", filename);
 
@@ -1188,10 +1309,22 @@ void header_gen(Module* module)
 	//OUTPUT("typedef ");
 	//header_print_type(file, type_flatten(type_typeid));
 	//OUTPUT(" c3typeid_t;\n");
+	//header_gen_decl(file, 0, type_flatten(type_typeid)->decl);
+	Type* flattened_typeid = type_flatten(type_typeid);
+
+	scratch_buffer_clear();
+	scratch_buffer_append_len("typedef ", 8);
+	c_type_append_name_to_scratch(flattened_typeid, "c3typeid_t");
+
+	OUTPUT("%.*s;\n", scratch_buffer.len, &scratch_buffer.str[0]);
+	scratch_buffer_clear();
+	//header_gen_decl(file, 0, flattened_typeid->decl);
+
 	OUTPUT("%s", "#endif\n");
 	// include gaurd?
+	
 	{
-		struct encode_result e = base62_5_encode(scratch_buffer.str, 0xffff, unit->file->name, strlen(unit->file->name), base62_alphabet_extended);
+		struct encode_result e = base62_5_encode(scratch_buffer.str, 0xffff, first_unit->file->name, strlen(first_unit->file->name), base62_alphabet_extended);
 
 		if (e.actual_chars > e.written_chars) {
 			OUTPUT("%s", "/* import name was too long to encode! */");
@@ -1218,7 +1351,7 @@ void header_gen(Module* module)
 			OUTPUT("%s", "#endif\n");
 		}
 	}
-	
+
 	/*
 	VECEACH(unit->imports, j) {
 		
@@ -1227,66 +1360,99 @@ void header_gen(Module* module)
 
 	//prototype each before they're defined
 	// structs?
-
-	OUTPUT("%s", "/* structs */\n");
-	VECEACH(unit->types, i)
-	{	
-		header_gen_decl(file, 0, unit->types[i]);
-	}
-	scratch_buffer_clear();
-
-	OUTPUT("%s", "/* enums */\n");
-	VECEACH(unit->enums, i)
-	{
-		header_gen_decl(file, 0, unit->enums[i]);
-		//llvm_emit_type_decls(gen_context, unit->enums[i]);
-	}
-	scratch_buffer_clear();
-
-	OUTPUT("%s", "/* fault_types */\n");
-	VECEACH(unit->faulttypes, i)
-	{
-		header_gen_decl(file, 0, unit->faulttypes[i]);
-	}
-	scratch_buffer_clear();
-
-	OUTPUT("%s", "/* functions */\n");
-	VECEACH(unit->functions, i)
-	{
-		header_gen_function_decl(file, &ctx, unit->functions[i]);
-		//llvm_emit_function_decl(gen_context, unit->functions[i]);
-	}
-	scratch_buffer_clear();
-
-	OUTPUT("%s", "/* methods */\n");
-	VECEACH(unit->methods, i)
-	{
-		header_gen_function_decl(file, &ctx, unit->methods[i]);
-		//llvm_emit_function_decl(gen_context, unit->methods[i]);
-	}
-	scratch_buffer_clear();
-
-	//write the actual function bodies
-	VECEACH(unit->functions, i)
-	{
-		Decl* decl = unit->functions[i];
-		if (decl->func_decl.body) {
-			c_emit_function_body(file, NULL, 0, decl);
+	VECEACH(module->units, j) {
+		CompilationUnit* unit = module->units[j];
+		OUTPUT("%s", "/* structs */\n");
+		VECEACH(unit->types, i)
+		{
+			header_gen_decl(file, 0, unit->types[i]);
 		}
-		//llvm_emit_function_body(gen_context, decl);
+		scratch_buffer_clear();
+
+		OUTPUT("%s", "/* enums */\n");
+		VECEACH(unit->enums, i)
+		{
+			header_gen_decl(file, 0, unit->enums[i]);
+			//llvm_emit_type_decls(gen_context, unit->enums[i]);
+		}
+		scratch_buffer_clear();
+
+		OUTPUT("%s", "/* fault_types */\n");
+		VECEACH(unit->faulttypes, i)
+		{
+			header_gen_decl(file, 0, unit->faulttypes[i]);
+		}
+		scratch_buffer_clear();
+
+		OUTPUT("%s", "/* functions */\n");
+		VECEACH(unit->functions, i)
+		{
+			header_gen_function_decl(file, &ctx, unit->functions[i]);
+			//llvm_emit_function_decl(gen_context, unit->functions[i]);
+		}
+		scratch_buffer_clear();
 	}
-	if (unit->main_function)
-		//llvm_emit_function_body(gen_context, unit->main_function);
+	/*
+	Decl** subarrays = VECNEW(Decl*, 256);
+	Decl** other_types = VECNEW(Decl*, 256);
+
+	VECEACH(unit->types, i)
+	{
+		Decl* decl = unit->types[i];
+		vec_add(other_types, decl);
+
+		if (decl_is_struct_type(decl)) {
+			Decl** members = decl->strukt.members;
+			VECEACH(members, j) {
+				if (decl_is_struct_type(members[i])) {
+					vec_add(other_types, members[i]);
+					continue;
+				}
+				if (members[i]->decl_kind == DECL_VAR) {
+					DECL_TYPE_KIND_REAL(kind, members[i]->type);
+					if (kind == TYPE_SUBARRAY) {
+						vec_add(subarrays, members[i]);
+					}
+				}
+			}
+		}
+	}
+	*/
+//	header_gen_subarray_decl_from_type(file, 0, lowered->array.base);
+
+	VECEACH(module->units, j) {
+		CompilationUnit* unit = module->units[j];
+
+		OUTPUT("%s", "/* methods */\n");
+		VECEACH(unit->methods, i)
+		{
+			header_gen_function_decl(file, &ctx, unit->methods[i]);
+			//llvm_emit_function_decl(gen_context, unit->methods[i]);
+		}
+		scratch_buffer_clear();
+
+		//write the actual function bodies
+		VECEACH(unit->functions, i)
+		{
+			Decl* decl = unit->functions[i];
+			if (decl->func_decl.body) {
+				c_emit_function_body(file, NULL, 0, decl);
+			}
+			//llvm_emit_function_body(gen_context, decl);
+		}
+		if (unit->main_function) {
+			c_emit_function_body(file, NULL, 0, unit->main_function);
+		}
 
 		VECEACH(unit->methods, i)
-	{
-		Decl* decl = unit->methods[i];
-		if (decl->func_decl.body) {
-			c_emit_function_body(file, NULL, 0, decl);
+		{
+			Decl* decl = unit->methods[i];
+			if (decl->func_decl.body) {
+				c_emit_function_body(file, NULL, 0, decl);
+			}
+			//llvm_emit_function_body(gen_context, decl);
 		}
-		//llvm_emit_function_body(gen_context, decl);
 	}
-
 	//TODO
 	/*
 	VECEACH(context->vars, i)
