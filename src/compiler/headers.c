@@ -1069,11 +1069,12 @@ static void header_gen_typedef(FILE* file, int indent, Decl* decl)
 		//printf("str len: %i\n", scratch_buffer.len);
 		scratch_buffer.str[scratch_buffer.len] = '\0';
 		printf("%.*s\n", scratch_buffer.len, &scratch_buffer.str[typedef_len]);
+
 		OUTPUT("%.*s", scratch_buffer.len, &scratch_buffer.str[typedef_len]); //scratch_buffer.len,
 		OUTPUT("%s", ";\n");
-
-
 		OUTPUT("typedef %s__ %s;\n", decl->extname, decl->extname);
+
+		scratch_buffer_clear();
 	}
 }
 
@@ -1160,24 +1161,28 @@ void header_gen(Module* module)
 	{
 		header_gen_decl(file, 0, unit->types[i]);
 	}
+	scratch_buffer_clear();
 
 	VECEACH(unit->enums, i)
 	{
 		header_gen_decl(file, 0, unit->enums[i]);
 		//llvm_emit_type_decls(gen_context, unit->enums[i]);
 	}
+	scratch_buffer_clear();
 
 	VECEACH(unit->functions, i)
 	{
 		header_gen_function_decl(file, &ctx, unit->functions[i]);
 		//llvm_emit_function_decl(gen_context, unit->functions[i]);
 	}
+	scratch_buffer_clear();
 
 	VECEACH(unit->methods, i)
 	{
 		header_gen_function_decl(file, &ctx, unit->methods[i]);
 		//llvm_emit_function_decl(gen_context, unit->methods[i]);
 	}
+	scratch_buffer_clear();
 
 	//write the actual function bodies
 	VECEACH(unit->functions, i)
@@ -1581,7 +1586,7 @@ void c_emit_if(FILE* file, void* context, int indent, Ast* ast) {
 void c_emit_expr_stmt(FILE* file, void* context, int indent, Ast* ast) {
 	printf(__FUNCDNAME__":%s", "\n");
 	//struct BEValue value;
-	//INDENT();
+	INDENT();
 	if (IS_FAILABLE(ast->expr_stmt)) {
 		//emit_expr(c, &value, ast->expr_stmt);
 	}
@@ -1609,7 +1614,6 @@ void c_emit_return(FILE* file, struct GenContext* context, int indent, Ast* ast)
 
 	Expr* expr = ast->return_stmt.expr;
 	//expr->type
-	Type* return_ty = expr->type; //? the return type?
 
 	if (expr && expr->expr_kind == EXPR_FAILABLE) {
 		if (expr->inner_expr)
@@ -1622,7 +1626,9 @@ void c_emit_return(FILE* file, struct GenContext* context, int indent, Ast* ast)
 		OUTPUT("%s", "return some_failable;\n");
 		return;
 	}
+
 	/*
+	* 	Type* return_ty = expr->type; //? the return type?
 	if (return_ty && (return_ty)->canonical && type_is_failable(return_ty)) //context->cur_func_decl->type->func.prototype->rtype
 	{
 		printf(__FUNCDNAME__":%s", "failable \n");
@@ -1646,7 +1652,7 @@ void c_emit_return(FILE* file, struct GenContext* context, int indent, Ast* ast)
 	printf(__FUNCDNAME__":%s", "return \n");
 	OUTPUT("%s", "return");
 
-	bool has_return_value = ast->return_stmt.expr != NULL;
+	bool has_return_value = expr != NULL;
 	if (has_return_value) {
 		OUTPUT("%s", " ");
 		c_emit_expr(file, context, indent, NULL, ast->return_stmt.expr);
@@ -1758,14 +1764,21 @@ static void c_emit_const_expr(FILE* file, void* context, int indent, struct BEVa
 		assert(type->array.base == type_char);
 		break;
 	case CONST_STRING:
-		//OUTPUT("%s", "\"");
+		OUTPUT("%s", "\"");
+		scratch_buffer_clear();
 		uint32_t escaped_string_start = scratch_buffer.len;
 		const char* str = expr->const_expr.string.chars;
 		ArraySize str_sz = expr->const_expr.string.len;
 		//octal escaping
-		for (unsigned i = 0; str_sz; i++) {
+		for (unsigned i = 0; i < str_sz; i++) {
 			uint8_t c = str[i];
-			if ((c < 0x20) | (c > 0x7E)) { //needs_escapeing(c)
+			if ((scratch_buffer.len + 4) >= 0xffff) {
+				//gaurd against scratch buffer overrun
+				OUTPUT("%.*s", (scratch_buffer.len - escaped_string_start), &scratch_buffer.str[escaped_string_start]);
+				scratch_buffer.len = escaped_string_start;
+			}
+
+			if ((c < 0x20) || (c > 0x7E)) { //needs_escapeing(c)
 				//octal escaping (always do 3 to make it easy)
 				scratch_buffer_append_char('\\');
 				scratch_buffer_append_char((c >> 6) + '0');
@@ -1777,7 +1790,7 @@ static void c_emit_const_expr(FILE* file, void* context, int indent, struct BEVa
 		}
 		uint32_t escaped_string_end = scratch_buffer.len;
 
-		OUTPUT("\"%.*s\"", (escaped_string_end - escaped_string_start), &scratch_buffer.str[escaped_string_start]);
+		OUTPUT("%.*s\"", (escaped_string_end - escaped_string_start), &scratch_buffer.str[escaped_string_start]);
 		scratch_buffer.len = escaped_string_start;
 
 		break;
@@ -2878,8 +2891,8 @@ void c_emit_for(FILE* file, void* context, int indent, Ast* ast) {
 			}
 		}
 		INDENT();
-		OUTPUT("%s", "} while (");
-		c_emit_expr(file, context, indent, NULL, cond ? exprptr(cond) : NULL);
+		OUTPUT("%s", " while (");
+		c_emit_expr(file, context, indent+1, NULL, cond ? exprptr(cond) : NULL);
 		OUTPUT("%s", ");\n");
 	}
 	else {
@@ -2887,13 +2900,13 @@ void c_emit_for(FILE* file, void* context, int indent, Ast* ast) {
 
 		OUTPUT("%s", "for (");
 		if (init)
-			c_emit_expr(file, context, indent, NULL, init ? exprptr(init) : NULL);
+			c_emit_expr(file, context, indent+1, NULL, init ? exprptr(init) : NULL);
 		OUTPUT("%s", ";");
 		if (cond)
-			c_emit_expr(file, context, indent, NULL, cond ? exprptr(cond) : NULL);
+			c_emit_expr(file, context, indent+1, NULL, cond ? exprptr(cond) : NULL);
 		OUTPUT("%s", ";");
 		if (incr)
-			c_emit_expr(file, context, indent, NULL, incr ? exprptr(incr) : NULL);
+			c_emit_expr(file, context, indent+1, NULL, incr ? exprptr(incr) : NULL);
 		OUTPUT("%s", ") ");
 		if (body) {
 			if (body->ast_kind == AST_COMPOUND_STMT) {
@@ -2932,7 +2945,7 @@ void c_emit_block_exit_return(FILE* file, void* context, int indent, Ast* ast)
 	{
 		if (ast->return_stmt.cleanup && IS_FAILABLE(ret_expr))
 		{
-			assert(c->catch_block);
+			//assert(c->catch_block);
 			//err_cleanup_block = llvm_basic_block_new(c, "opt_block_cleanup");
 			//c->catch_block = err_cleanup_block;
 		}
@@ -3013,6 +3026,7 @@ void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
 		UNREACHABLE
 	case AST_EXPR_STMT:
 		//gencontext_emit_expr_stmt(c, ast);
+		
 		c_emit_expr_stmt(file, context, indent, ast);
 		return; //outputs it's own newline
 	case AST_DECLARE_STMT:
@@ -3083,12 +3097,20 @@ void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
 				str = "Assert violation";
 				str_sz = 16;
 			}
-
+			
+			OUTPUT("%s", " && \"");
+			//give ourselves a large buffer
+			scratch_buffer_clear();
 			uint32_t escaped_string_start = scratch_buffer.len;
 			
 			//octal escaping
-			for (unsigned i = 0; str_sz; i++) {
+			for (unsigned i = 0; i < str_sz; i++) {
 				uint8_t c = str[i];
+				if ((scratch_buffer.len + 4) >= 0xffff) {
+					//gaurd against scratch buffer overrun
+					OUTPUT("%.*s", (scratch_buffer.len - escaped_string_start), &scratch_buffer.str[escaped_string_start]);
+					scratch_buffer.len = escaped_string_start;
+				}
 				if ((c < 0x20) | (c > 0x7E)) { //needs_escapeing(c)
 					//octal escaping (always do 3 to make it easy)
 					scratch_buffer_append_char('\\');
@@ -3102,7 +3124,7 @@ void c_emit_stmt(FILE* file, void* context, int indent, Ast* ast) {
 			}
 			uint32_t escaped_string_end = scratch_buffer.len;
 
-			OUTPUT(" && %.*s);\n", (escaped_string_end-escaped_string_start), &scratch_buffer.str[escaped_string_start]);
+			OUTPUT("%.*s\");\n", (escaped_string_end-escaped_string_start), &scratch_buffer.str[escaped_string_start]);
 
 			scratch_buffer.len = escaped_string_start;
 		}
@@ -3152,7 +3174,7 @@ void c_emit_function_body(FILE* file, void* context, int indent, Decl* decl) {
 
 	if (prototype->ret_by_ref_abi_info)
 	{
-		assert(!c->return_out);
+		//assert(!c->return_out);
 		//c->return_out = LLVMGetParam(c->function, arg++);
 	}
 
