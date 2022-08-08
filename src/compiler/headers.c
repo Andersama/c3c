@@ -21,6 +21,10 @@ static void c_emit_binary_expr(FILE* file, void* context, int indent, struct BEV
 static void c_emit_assign_expr(FILE* file, void* context, int ident, struct BEValue* value, Expr* expr);
 static void c_emit_op(FILE* file, void* context, int ident, uint32_t op);
 
+static void header_gen_struct(FILE* file, int indent, Decl* decl);
+static void header_gen_union(FILE* file, int indent, Decl* decl);
+static void header_gen_enum(FILE* file, int indent, Decl* decl);
+
 static void indent_line(FILE* file, int indent)
 {
 	//printf(__FUNCDNAME__":%d %i\n", indent, scratch_buffer.len);
@@ -896,7 +900,7 @@ static void header_gen_members(FILE* file, int indent, Decl** members)
 		Decl* member = members[i];
 		if (member->decl_kind == DECL_VAR)
 		{
-			printf("adding member: %s\n", member->name);
+			printf("adding variable member: %s\n", member->name);
 			INDENT();
 			//header_print_named_type(file, member->type, member->name);
 			scratch_buffer_clear();
@@ -917,8 +921,15 @@ static void header_gen_members(FILE* file, int indent, Decl** members)
 			*/
 			//header_print_type(file, member->type);
 			//OUTPUT(" %s;\n", member->name);
-		}
-		else {
+		} else if (member->decl_kind == DECL_UNION) {
+			printf("adding union member: %s\n", member->name);
+			//INDENT();
+			//header_print_named_type(file, member->type, member->name);
+			//scratch_buffer_clear();
+			//c_type_append_name_to_scratch(member->type, member->name);
+			header_gen_union(file, indent, member->type->decl);
+
+		} else {
 			INDENT();
 			OUTPUT("/* a member named [%s] : type[%i] */\n", member->name, member->decl_kind);
 			//TODO;
@@ -955,7 +966,7 @@ static void header_gen_enum_members(FILE* file, int indent, Decl** members) {
 			//header_print_type(file, member->type);
 			//OUTPUT(" %s;\n", member->name);
 		}
-		if (member->decl_kind == DECL_ENUM_CONSTANT) {
+		else if (member->decl_kind == DECL_ENUM_CONSTANT) {
 			INDENT();
 			OUTPUT("%s, //%i\n", member->name, i);
 		}
@@ -974,15 +985,18 @@ static void header_gen_struct(FILE* file, int indent, Decl* decl)
 	{
 		OUTPUT("typedef struct %s__ %s;\n", decl->extname, decl->extname);
 	}
-	printf("generating: %s\n", decl->name);
+	printf("generating struct: %s\n", decl->name);
 	INDENT();
-	if (decl->name)
+	if (decl->extname && *decl->extname)
 	{
-		OUTPUT("struct %s__\n{\n", decl->extname);
+		OUTPUT("struct %s__ {\n", decl->extname);
+	}
+	else if (decl->name && *decl->name) {
+		OUTPUT("struct %s__ {\n", decl->name);
 	}
 	else
 	{
-		OUTPUT("%s", "struct\n{\n");
+		OUTPUT("%s", "struct {\n");
 	}
 	header_gen_members(file, indent + 1, decl->strukt.members);
 	INDENT();
@@ -991,20 +1005,41 @@ static void header_gen_struct(FILE* file, int indent, Decl* decl)
 
 static void header_gen_union(FILE* file, int indent, Decl* decl)
 {
-	OUTPUT("typedef union %s__ %s;\n", decl->extname, decl->extname);
-	OUTPUT("union %s__\n{\n", decl->extname);
-	header_gen_members(file, indent, decl->strukt.members);
+	if (!indent) {
+		OUTPUT("typedef union %s__ %s;\n", decl->extname, decl->extname);
+	}
+	printf("generating union: %s\n", decl->name);
+	INDENT();
+
+	if (decl->extname && *decl->extname)
+	{
+		OUTPUT("union %s__ {\n", decl->extname);
+	}
+	else if (decl->name && *decl->name) {
+		OUTPUT("union %s__ {\n", decl->name);
+	}
+	else
+	{
+		OUTPUT("%s", "union {\n");
+	}
+
+	header_gen_members(file, indent+1, decl->strukt.members);
+
+	INDENT();
 	OUTPUT("%s", "};\n");
 }
 
 static void header_gen_enum(FILE* file, int indent, Decl* decl)
 {
-	//TODO
-	OUTPUT("typedef enum %s__ %s;\n", decl->extname, decl->extname);
-	OUTPUT("enum %s__\n{\n", decl->extname);
+	if (!indent) {
+		OUTPUT("typedef enum %s__ %s;\n", decl->extname, decl->extname);
+	}
+	INDENT();
+	OUTPUT("enum %s__ {\n", decl->extname);
 	//decl->enums
 	//decl->strukt
-	header_gen_enum_members(file, indent, decl->enums.values);
+	header_gen_enum_members(file, indent+1, decl->enums.values);
+	INDENT();
 	OUTPUT("%s", "};\n");
 }
 
@@ -1154,15 +1189,53 @@ void header_gen(Module* module)
 	//header_print_type(file, type_flatten(type_typeid));
 	//OUTPUT(" c3typeid_t;\n");
 	OUTPUT("%s", "#endif\n");
+	// include gaurd?
+	{
+		struct encode_result e = base62_5_encode(scratch_buffer.str, 0xffff, unit->file->name, strlen(unit->file->name), base62_alphabet_extended);
+
+		if (e.actual_chars > e.written_chars) {
+			OUTPUT("%s", "/* import name was too long to encode! */");
+		}
+		else {
+			OUTPUT("#ifndef __c3__%.*s /* include gaurd */\n", (uint32_t)(e.written_chars), &scratch_buffer.str[0]);
+			OUTPUT("#define __c3__%.*s\n", (uint32_t)(e.written_chars), &scratch_buffer.str[0]);
+			OUTPUT("%s", "#endif\n");
+		}
+	}
+	
+	for (unsigned(i) = 1, CONCAT(__vecsize_, __LINE__) = vec_size(module->units); (i) < CONCAT(__vecsize_, __LINE__); (i)++)
+	{
+		CompilationUnit* other_unit = module->units[i];
+		//const char* filename = str_cat(unit->file->name, ".h");
+		struct encode_result e = base62_5_encode(scratch_buffer.str, 0xffff, other_unit->file->name, strlen(other_unit->file->name), base62_alphabet_extended);
+
+		if (e.actual_chars > e.written_chars) {
+			OUTPUT("%s", "/* import name was too long to encode! */");
+		} else {
+			OUTPUT("#ifndef __c3__%.*s\n", (uint32_t)(e.written_chars), &scratch_buffer.str[0]);
+			OUTPUT("#define __c3__%.*s\n", (uint32_t)(e.written_chars), &scratch_buffer.str[0]);
+			OUTPUT("#include \"%s.h\"\n", other_unit->file->name); //other_unit->file->dir_path,
+			OUTPUT("%s", "#endif\n");
+		}
+	}
+	
+	/*
+	VECEACH(unit->imports, j) {
+		
+	}
+	*/
 
 	//prototype each before they're defined
 	// structs?
+
+	OUTPUT("%s", "/* structs */\n");
 	VECEACH(unit->types, i)
-	{
+	{	
 		header_gen_decl(file, 0, unit->types[i]);
 	}
 	scratch_buffer_clear();
 
+	OUTPUT("%s", "/* enums */\n");
 	VECEACH(unit->enums, i)
 	{
 		header_gen_decl(file, 0, unit->enums[i]);
@@ -1170,6 +1243,14 @@ void header_gen(Module* module)
 	}
 	scratch_buffer_clear();
 
+	OUTPUT("%s", "/* fault_types */\n");
+	VECEACH(unit->faulttypes, i)
+	{
+		header_gen_decl(file, 0, unit->faulttypes[i]);
+	}
+	scratch_buffer_clear();
+
+	OUTPUT("%s", "/* functions */\n");
 	VECEACH(unit->functions, i)
 	{
 		header_gen_function_decl(file, &ctx, unit->functions[i]);
@@ -1177,6 +1258,7 @@ void header_gen(Module* module)
 	}
 	scratch_buffer_clear();
 
+	OUTPUT("%s", "/* methods */\n");
 	VECEACH(unit->methods, i)
 	{
 		header_gen_function_decl(file, &ctx, unit->methods[i]);
@@ -1705,6 +1787,19 @@ void c_emit_builtin_access(FILE* file, void* context, int indent, Expr* expr) {
 
 	}break;
 	}
+}
+
+void c_emit_const_initializer_list_expr(FILE* file, void* context, int indent, Expr* expr) {
+	/*
+	if (!c->builder || type_is_vector(expr->type) || type_flatten_distinct(expr->type)->type_kind == TYPE_BITSTRUCT)
+	{
+		llvm_value_set(value, llvm_emit_const_initializer(c, expr->const_expr.list), expr->type);
+		return;
+	}
+	llvm_value_set_address_abi_aligned(value, llvm_emit_alloca_aligned(c, expr->type, "literal"), expr->type);
+	llvm_emit_initialize_reference_const(c, value, expr);
+	*/
+	TODO
 }
 
 const char* constkind_names[] = {
@@ -2435,6 +2530,23 @@ void c_emit_access_addr(FILE* file, void* context, int indent, struct BEValue* v
 		//c_emit_expr(file, context, indent, value, parent);
 		TODO;
 		return;
+	}
+
+	/*
+	if (type_is_pointer(flat_type)) {
+		//c_emit_expr(file, context, indent, value, parent->unary_expr.expr);
+		//OUTPUT("->%s", (member->extname && *member->extname) ? member->extname : member->name);
+		//return;
+	}
+	*/
+	if (parent->expr_kind == EXPR_UNARY) {
+		Expr* inner = parent->unary_expr.expr;
+		UnaryOp unary_op = parent->unary_expr.operator;
+		if (unary_op == UNARYOP_DEREF) {
+			c_emit_expr(file, context, indent, value, parent->unary_expr.expr);
+			OUTPUT("->%s", (member->extname && *member->extname) ? member->extname : member->name);
+			return;
+		}
 	}
 
 	c_emit_expr(file, context, indent, value, parent);
