@@ -19,6 +19,16 @@ private fn void List.ensure_capacity(List *list) @inline
     }
 }
 
+private fn void List.ensure_capacity_for_n(List *list, usize n) @inline
+{
+    if (list.capacity < (list.size + n))
+    {
+        usize double_capacity = list.capacity * 2;
+        usize larger_capacity = (nsize < double_capacity) ? double_capacity : nsize;
+        list.capacity = (nsize <= list.capacity) ? list.capacity : larger_capacity;
+        list.entries = realloc(list.entries, Type.sizeof * list.capacity);
+    }
+}
 
 fn void List.push(List *list, Type element) @inline
 {
@@ -29,6 +39,21 @@ fn void List.append(List* list, Type element)
 {
     list.ensure_capacity();
     list.entries[list.size++] = element;
+}
+
+fn void List.push_many(List *list, Type[] elements) @inline
+{
+    list.append_many(elements);
+}
+
+fn void List.append_many(List* list, Type[] elements)
+{
+    list.ensure_capacity_for_n(list.size + elements.len);
+    for (usize i = 0; i < elements.len; i++)
+    {
+        list.entries[list.size+i] = elements[i];
+    }
+    list.size += elements.len;
 }
 
 /**
