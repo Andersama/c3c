@@ -19,16 +19,39 @@ private fn void List.ensure_capacity(List *list) @inline
     }
 }
 
+private fn void List.ensure_capacity_for_n(List *list, usize nsize) @inline
+{
+    if (list.capacity < nsize) {
+        usize double_capacity = list.capacity ? 2 * list.capacity : 16;
+        usize larger_capacity = (nsize < double_capacity) ? double_capacity : nsize;
+        list.capacity = (nsize <= list.capacity) ? list.capacity : larger_capacity;
+        list.entries = mem::realloc(list.entries, Token.sizeof * list.capacity);
+    }
+}
+
 
 fn void List.push(List *list, Type element) @inline
 {
     list.append(element);
 }
 
+fn void List.push_many(List *list, Type[] elements) @inline
+{
+    list.append_many(elements);
+}
+
 fn void List.append(List* list, Type element)
 {
     list.ensure_capacity();
     list.entries[list.size++] = element;
+}
+
+fn void List.append_many(List* list, Type[] elements) {
+    list.ensure_capacity_for_n(list.size + elements.len);
+    for (usize i = 0; i < elements.len; i++) {
+        list.entries[list.size+i] = elements[i];
+    }
+    list.size += elements.len;
 }
 
 /**
