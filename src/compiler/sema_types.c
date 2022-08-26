@@ -313,6 +313,95 @@ RETRY:
 		case TYPE_INFO_POINTER:
 			if (!sema_resolve_ptr_type(context, type_info)) return false;
 			break;
+		case TYPE_INFO_GENERIC_NUMERIC_CONSTANT:
+			if (type_info->type == NULL) {
+				// NOTE: should probably be it's own function
+				scratch_buffer_clear();
+				scratch_buffer_append_len("__GNC", 5);
+				Int ixx = type_info->numeric_constant.expr->const_expr.ixx;
+				Type* underlying_type = NULL;
+
+				switch (ixx.type) {
+				case TYPE_U8:
+					scratch_buffer_append_len("u8", 2);
+					underlying_type = type_char;
+					break;
+				case TYPE_U16:
+					scratch_buffer_append_len("u16", 3);
+					underlying_type = type_ushort;
+					break;
+				case TYPE_U32:
+					scratch_buffer_append_len("u32", 3);
+					underlying_type = type_uint;
+					break;
+				case TYPE_U64:
+					scratch_buffer_append_len("u64", 3);
+					underlying_type = type_ulong;
+					break;
+				case TYPE_U128:
+					scratch_buffer_append_len("u128", 4);
+					underlying_type = type_u128;
+					break;
+				case TYPE_I8:
+					scratch_buffer_append_len("i8", 2);
+					underlying_type = type_ichar;
+					break;
+				case TYPE_I16:
+					scratch_buffer_append_len("i16", 3);
+					underlying_type = type_short;
+					break;
+				case TYPE_I32:
+					scratch_buffer_append_len("i32", 3);
+					underlying_type = type_int;
+					break;
+				case TYPE_I64:
+					scratch_buffer_append_len("i64", 3);
+					underlying_type = type_long;
+					break;
+				case TYPE_I128:
+					scratch_buffer_append_len("i128", 4);
+					underlying_type = type_i128;
+					break;
+				case TYPE_F16:
+					scratch_buffer_append_len("f16", 3);
+					underlying_type = type_half;
+					break;
+				case TYPE_F32:
+					scratch_buffer_append_len("f32", 3);
+					underlying_type = type_float;
+					break;
+				case TYPE_F64:
+					scratch_buffer_append_len("f64", 3);
+					underlying_type = type_double;
+					break;
+				case TYPE_F128:
+					scratch_buffer_append_len("f128", 4);
+					underlying_type = type_f128;
+					break;
+				default:
+					assert(false && "type must be some numeric constant!");
+					scratch_buffer_append_char('_');
+					break;
+				}
+				scratch_buffer_append_char('_');
+				scratch_buffer_append_unsigned_int(ixx.i.high);
+				scratch_buffer_append_char('_');
+				scratch_buffer_append_unsigned_int(ixx.i.low);
+
+				scratch_buffer_to_string();
+				type_info->numeric_constant.name = scratch_buffer_copy();
+
+				Decl *numeric_decl = decl_new_with_type(type_info->numeric_constant.name, type_info->span, DECL_STRUCT, VISIBLE_PUBLIC);
+				type_info->type = numeric_decl->type;
+
+				vec_add(numeric_decl->strukt.members, decl_new_generated_var(underlying_type, VARDECL_MEMBER, type_info->span));
+				numeric_decl->strukt.members[0]->name = "value";
+				
+				unit_register_global_decl(context->unit, numeric_decl);
+				//unit_register_global_decl()
+			}
+			type_info->resolve_status = RESOLVE_DONE;
+			break;
 	}
 APPEND_QUALIFIERS:
 	switch (kind)

@@ -1495,7 +1495,29 @@ static inline TypeInfo **parse_generic_parameters(ParseContext *c)
 	TypeInfo **types = NULL;
 	while (!try_consume(c, TOKEN_GREATER))
 	{
-		ASSIGN_TYPE_OR_RET(TypeInfo *type_info, parse_type(c), NULL);
+		//ASSIGN_TYPE_OR_RET(TypeInfo *type_info, parse_type(c), NULL);
+		
+		TypeInfo* type_info = NULL;
+		switch (c->tok)
+		{
+		case TYPELIKE_TOKENS:
+			type_info = parse_type(c);
+			break;
+		case TOKEN_INTEGER:
+		case TOKEN_REAL:
+		{
+			Expr* expr = parse_additive_expr(c); //type_info = expr->type_expr;
+			type_info = type_info_new(TYPE_INFO_GENERIC_NUMERIC_CONSTANT, expr->span);
+			type_info->numeric_constant.expr = expr;
+		}
+		break;
+		default:
+			break;
+		}
+		
+		if (!type_info_ok(type_info))
+			return NULL;
+		
 		vec_add(types, type_info);
 		TokenType tok = c->tok;
 		if (tok != TOKEN_RPAREN && tok != TOKEN_GREATER)

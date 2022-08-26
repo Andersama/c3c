@@ -290,6 +290,11 @@ struct TypeInfo_
 			Expr *len;
 		} array;
 		TypeInfo *pointer;
+		struct
+		{
+			const char* name;
+			Expr* expr;
+		} numeric_constant;
 	};
 };
 

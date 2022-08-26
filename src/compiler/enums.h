@@ -328,6 +328,7 @@ typedef enum
 	TYPE_INFO_INFERRED_ARRAY,
 	TYPE_INFO_SUBARRAY,
 	TYPE_INFO_POINTER,
+	TYPE_INFO_GENERIC_NUMERIC_CONSTANT, // for generic handling of literal numbers (may be handled better in some other way)
 } TypeInfoKind;
 
 typedef enum

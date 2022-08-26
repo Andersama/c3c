@@ -22,6 +22,7 @@ Ast *parse_stmt(ParseContext *c);
 Path *parse_path_prefix(ParseContext *c, bool *had_error);
 Expr *parse_type_expression_with_path(ParseContext *c, Path *path);
 Expr *parse_expr(ParseContext *c);
+Expr* parse_additive_expr(ParseContext * c);
 bool consume_ident(ParseContext *c, const char* name);
 TypeInfo *parse_type(ParseContext *c);
 TypeInfo *parse_optional_type(ParseContext *c);

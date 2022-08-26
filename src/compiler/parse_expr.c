@@ -248,6 +248,10 @@ Expr* parse_constant_expr(ParseContext *c)
 	return parse_precedence(c, PREC_TERNARY);
 }
 
+Expr* parse_additive_expr(ParseContext* c)
+{
+	return parse_precedence(c, PREC_ADDITIVE);
+}
 /**
  * param_path : ('[' expression ']' | '.' IDENT)*
  *
