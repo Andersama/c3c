@@ -36,3 +36,26 @@ macro bool @is_comparer(#cmp, #list)
 		return false;
 	$endif
 }
+
+macro bool @is_keyer(#keyer, #list)
+{
+	var $Type = $typeof(#keyer);
+	$if $and($Type.kindof == FUNC, $Type.returns.kindof == SIGNED_INT):
+		var $params = $Type.params;
+		$if $params.len != 1:
+			return false;
+		$else
+			var $element = @typeid(#list[0]);
+			$switch
+				$case $element == $params[0]:
+					return true;
+				$case $and($params[0].kindof == POINTER, $params[0].inner == $element):
+					return true;
+				$default:
+					return false;
+			$endswitch
+		$endif
+	$else
+		return false;
+	$endif
+}
